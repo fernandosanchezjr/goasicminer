@@ -1,3 +1,5 @@
-github.com/ziutek/ftdi v0.0.0-20200603141500-eeb855b6c05f h1:K0ZM4qqlCCa8Kwkx3zMPRcaR440NhQqWbKqokNKDbVU=
-github.com/ziutek/ftdi v0.0.0-20200603141500-eeb855b6c05f/go.mod h1:fUzQhjslJJSlwoMW5Cd+0RUc8KuMDfsuZB+wfJAz1eg=
+github.com/fernandosanchezjr/ftdi v0.0.0-20200713202533-60b6868f46f6 h1:DhHiD1Z6N8OVMCCIVEuFKi6mWMpmbCLouyKZGaDZIvE=
+github.com/fernandosanchezjr/ftdi v0.0.0-20200713202533-60b6868f46f6/go.mod h1:pqwC6DQq7lgn3AmtXZH13s43ZakrajQLvq2OiYUuUMw=
+github.com/google/gousb v2.1.0+incompatible h1:ApzMDjF3FeO219QwWybJxYfFhXQzPLOEy0o+w9k5DNI=
+github.com/google/gousb v2.1.0+incompatible/go.mod h1:Tl4HdAs1ThE3gECkNwz+1MWicX6FXddhJEw7L8jRDiI=
 github.com/ziutek/lcd v0.0.0-20141212131202-924f223d0903/go.mod h1:ZBCPhfHIcCtzsrXIcyEiSPDKHrjT9fXtJNKj2t1HCKw=

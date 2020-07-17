@@ -2,47 +2,52 @@ package base
 
 import (
 	"fmt"
-	"github.com/ziutek/ftdi"
+	"github.com/google/gousb"
 )
 
 type IDriver interface {
-	Matches(device *ftdi.USBDev) bool
+	MatchesPidVid(desc *gousb.DeviceDesc) bool
+	MatchesDevice(manufacturer, productName string) bool
 	String() string
-	NewController(device *ftdi.USBDev) IController
-	NewDevice(controller IController) IDevice
+	NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController
 	Equals(driver IDriver) bool
+	EndpointNumbers() (int, int)
 }
 
 type Driver struct {
-	Manufacturer string
-	Description  string
-	Channel      ftdi.Channel
+	PidVid
+	Manufacturer      string
+	ProductName       string
+	InEndpointNumber  int
+	OutEndpointNumber int
 }
 
-func NewDriver(manufacturer, description string, channel ftdi.Channel) *Driver {
+func NewDriver(product, vendor gousb.ID, manufacturer, productName string, inEndpointNumber, outEndpointNumber int) *Driver {
 	return &Driver{
-		Manufacturer: manufacturer,
-		Description:  description,
-		Channel:      channel,
+		PidVid:            PidVid{Product: product, Vendor: vendor},
+		Manufacturer:      manufacturer,
+		ProductName:       productName,
+		InEndpointNumber:  inEndpointNumber,
+		OutEndpointNumber: outEndpointNumber,
 	}
 }
 
-func (d *Driver) Matches(device *ftdi.USBDev) bool {
-	return d.Manufacturer == device.Manufacturer && d.Description == device.Description
+func (d *Driver) MatchesDevice(manufaturer, productName string) bool {
+	return d.Manufacturer == manufaturer && d.ProductName == productName
 }
 
 func (d *Driver) String() string {
-	return fmt.Sprintf("%s %s", d.Manufacturer, d.Description)
+	return fmt.Sprintf("%s %s", d.Manufacturer, d.ProductName)
 }
 
 func (d *Driver) Equals(driver IDriver) bool {
 	return d.String() == driver.String()
 }
 
-func (d *Driver) NewController(device *ftdi.USBDev) IController {
-	return NewController(device, d.Channel)
+func (d *Driver) NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController {
+	return NewController(driver, device, inEndpoint, outEndpoint)
 }
 
-func (d *Driver) NewDevice(controller IController) IDevice {
-	return NewDevice(d, controller)
+func (d *Driver) EndpointNumbers() (int, int) {
+	return d.InEndpointNumber, d.OutEndpointNumber
 }

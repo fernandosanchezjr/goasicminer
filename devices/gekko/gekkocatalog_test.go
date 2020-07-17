@@ -6,20 +6,21 @@ import (
 )
 
 func TestGekkoCatalog_FindDevices(t *testing.T) {
-	defer base.CleanUp()
+	context := base.NewContext()
+	defer context.Close()
 	gekko := NewGekkoCatalog()
-	if devices, err := gekko.FindDevices(); err == nil {
-		for _, d := range devices {
-			t.Log(gekko, "catalog found device:", d.LongString())
+	if controllers, err := gekko.FindControllers(context); err == nil {
+		for _, c := range controllers {
+			t.Log(gekko, "catalog found device:", c.LongString())
 		}
 	} else {
-		t.Fatalf("%s catalog error finding devices: %v", gekko, err)
+		t.Fatalf("%s catalog error finding controllers: %v", gekko, err)
 	}
-	if devices, err := gekko.FindDevices(); err == nil {
-		if len(devices) > 0 {
-			t.Fatal("Found already opened devices")
+	if controllers, err := gekko.FindControllers(context); err == nil {
+		if len(controllers) > 0 {
+			t.Fatal("Found already opened controllers")
 		}
 	} else {
-		t.Fatalf("%s catalog error finding devices: %v", gekko, err)
+		t.Fatalf("%s catalog error finding controllers: %v", gekko, err)
 	}
 }

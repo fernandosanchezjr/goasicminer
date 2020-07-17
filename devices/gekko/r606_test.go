@@ -1,20 +1,25 @@
 package gekko
 
 import (
-	"github.com/fernandosanchezjr/goasicminer/devices/usb"
+	"github.com/fernandosanchezjr/goasicminer/devices/base"
+	"github.com/google/gousb"
 	"testing"
 )
 
-func TestR606_Matches(t *testing.T) {
+func TestR606_Search(t *testing.T) {
+	context := base.NewContext()
+	defer context.Close()
 	r606 := NewR606()
-	if usbDevs, err := usb.FindFTDIDevices(); err == nil {
-		for _, ud := range usbDevs {
-			if r606.Matches(ud) {
-				t.Log(r606, "driver found serial:", ud.Serial)
-			}
-			ud.Close()
-		}
+	if devices, err := context.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+		return r606.MatchesPidVid(desc)
+	}); err != nil {
+		t.Fatal("context.OpenDevices error:", err)
 	} else {
-		t.Fatalf("%s driver error finding devices: %v", r606, err)
+		for _, d := range devices {
+			t.Log(r606, "driver found device at", d)
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
