@@ -26,7 +26,7 @@ func (rc *R606Controller) Reset() error {
 	if count, err := rc.CountChips(); err != nil {
 		return err
 	} else {
-		log.Println(rc, "found", count, "chips")
+		log.Println(rc.LongString(), "found", count, "chips")
 	}
 	return nil
 }
@@ -67,8 +67,8 @@ func (rc *R606Controller) CountChips() (int, error) {
 	if err := rc.Write(data); err != nil {
 		return 0, err
 	}
-	time.Sleep(1 * time.Millisecond)
-	if err := rc.Read(&buf, 0xff); err != nil {
+	time.Sleep(10 * time.Millisecond)
+	if err := rc.Read(&buf); err != nil {
 		return 0, err
 	} else {
 		ccr := protocol.NewCountChipsResponse()

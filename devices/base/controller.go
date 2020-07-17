@@ -19,7 +19,7 @@ type IController interface {
 	Initialize() error
 	Reset() error
 	Write(data []byte) error
-	Read(buf *bytes.Buffer, readCount int) error
+	Read(buf *bytes.Buffer) error
 }
 
 type Controller struct {
@@ -119,18 +119,19 @@ func (c *Controller) Write(data []byte) error {
 	return nil
 }
 
-func (c *Controller) Read(buf *bytes.Buffer, readCount int) error {
+func (c *Controller) Read(buf *bytes.Buffer) error {
 	inEndpoint := c.InEndpoint()
-	var total int
-	if stream, err := inEndpoint.NewStream(readCount, 1); err != nil {
+	if stream, err := inEndpoint.NewStream(c.inEndpoint.Desc.MaxPacketSize, 1); err != nil {
 		return err
 	} else {
-		for total < readCount {
+		for {
 			if read, err := stream.Read(c.readBuffer); err != nil {
 				return err
 			} else {
 				buf.Write(c.readBuffer[:read])
-				total += read
+				if read < c.inEndpoint.Desc.MaxPacketSize {
+					break
+				}
 			}
 		}
 		if err := stream.Close(); err != nil {
