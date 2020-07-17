@@ -45,7 +45,7 @@ func (c *Controller) String() string {
 }
 
 func (c *Controller) LongString() string {
-	return fmt.Sprintf("%s: %s", c.driver, c)
+	return fmt.Sprintf("%s %s", c.driver, c)
 }
 
 func (c *Controller) Close() {

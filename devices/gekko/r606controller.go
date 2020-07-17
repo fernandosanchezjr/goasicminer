@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	R606BaudDiv = 1
+)
+
 type R606Controller struct {
 	base.IController
 	lastReset time.Time
@@ -20,6 +24,7 @@ func NewR606Controller(controller base.IController) *R606Controller {
 }
 
 func (rc *R606Controller) Reset() error {
+	log.Println("Resetting", rc.LongString())
 	if err := rc.PerformReset(); err != nil {
 		return err
 	}
@@ -28,6 +33,16 @@ func (rc *R606Controller) Reset() error {
 	} else {
 		log.Println(rc.LongString(), "found", count, "chips")
 	}
+	if err := rc.SendChainInactive(); err != nil {
+		return err
+	}
+	if err := rc.SendChainInactive(); err != nil {
+		return err
+	}
+	if err := rc.SetBaud(); err != nil {
+		return err
+	}
+	log.Println(rc.LongString(), "reset")
 	return nil
 }
 
@@ -79,4 +94,59 @@ func (rc *R606Controller) CountChips() (int, error) {
 			return rc.chipCount, nil
 		}
 	}
+}
+
+func (rc *R606Controller) SendChainInactive() error {
+	ci := protocol.NewChainInactive()
+	cic := protocol.NewChainInactiveChip(rc.chipCount)
+	if data, err := ci.MarshalBinary(); err != nil {
+		return err
+	} else {
+		if err := rc.Write(data); err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+		if err := rc.Write(data); err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+		if err := rc.Write(data); err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	for i := 0; i < rc.chipCount; i++ {
+		cic.SetCurrentChip(i)
+		if data, err := cic.MarshalBinary(); err != nil {
+			return err
+		} else {
+			if err := rc.Write(data); err != nil {
+				return err
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	return nil
+}
+
+func (rc *R606Controller) SetBaud() error {
+	sba := protocol.NewSetBaudA(R606BaudDiv)
+	sbb := protocol.NewSetBaudB(R606BaudDiv)
+	if data, err := sba.MarshalBinary(); err != nil {
+		return err
+	} else {
+		if err := rc.Write(data); err != nil {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if data, err := sbb.MarshalBinary(); err != nil {
+		return err
+	} else {
+		if err := rc.Write(data); err != nil {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
 }
