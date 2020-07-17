@@ -16,7 +16,7 @@ func NewContext() *Context {
 	c := &Context{
 		Context: gousb.NewContext(),
 	}
-	c.Debug(-1)
+	c.Debug(0)
 	return c
 }
 
