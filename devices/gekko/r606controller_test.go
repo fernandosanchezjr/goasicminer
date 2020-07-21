@@ -3,6 +3,7 @@ package gekko
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"testing"
+	"time"
 )
 
 func TestR606Controller_Initialize(t *testing.T) {
@@ -21,5 +22,6 @@ func TestR606Controller_Initialize(t *testing.T) {
 		if err := dev.Reset(); err != nil {
 			t.Fatal(err)
 		}
+		time.Sleep(10 * time.Second)
 	}
 }

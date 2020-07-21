@@ -21,5 +21,5 @@ func BMCRC(data []byte) {
 			idx++
 		}
 	}
-	data[len(data)-1] |= (c[4] * 0x10) | (c[3] * 0x08) | (c[2] * 0x04) | (c[1] * 0x02) | (c[0] * 0x01)
+	data[len(data)-1] = (c[4] * 0x10) | (c[3] * 0x08) | (c[2] * 0x04) | (c[1] * 0x02) | (c[0] * 0x01)
 }

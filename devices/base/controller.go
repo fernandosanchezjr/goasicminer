@@ -2,6 +2,7 @@ package base
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/google/gousb"
 	"log"
@@ -116,26 +117,21 @@ func (c *Controller) Write(data []byte) error {
 	} else if written != countLen {
 		return fmt.Errorf("could not write %d bytes", countLen)
 	}
+	log.Println("Wrote:", hex.EncodeToString(data))
 	return nil
 }
 
 func (c *Controller) Read(buf *bytes.Buffer) error {
 	inEndpoint := c.InEndpoint()
-	if stream, err := inEndpoint.NewStream(c.inEndpoint.Desc.MaxPacketSize, 1); err != nil {
-		return err
-	} else {
-		for {
-			if read, err := stream.Read(c.readBuffer); err != nil {
-				return err
-			} else {
-				buf.Write(c.readBuffer[:read])
-				if read < c.inEndpoint.Desc.MaxPacketSize {
-					break
-				}
-			}
-		}
-		if err := stream.Close(); err != nil {
+	for {
+		if read, err := inEndpoint.Read(c.readBuffer); err != nil {
 			return err
+		} else {
+			buf.Write(c.readBuffer[:read])
+			if read < c.inEndpoint.Desc.MaxPacketSize {
+				log.Println("Read:", hex.EncodeToString(buf.Bytes()))
+				break
+			}
 		}
 	}
 	return nil
