@@ -72,12 +72,16 @@ func (td *TaskDispatcher) OnError(task ITask) {
 
 func (td *TaskDispatcher) loop(taskChan TaskChan, handler TaskFunc) {
 	var task ITask
+	var ok bool
 	for {
 		select {
 		case <-td.quit:
 			td.wg.Done()
 			return
-		case task = <-taskChan:
+		case task, ok = <-taskChan:
+			if !ok {
+				continue
+			}
 			handler(task, td)
 		}
 	}

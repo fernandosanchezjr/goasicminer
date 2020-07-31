@@ -2,44 +2,45 @@ package protocol
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"github.com/howeyc/crc16"
 )
 
 type Task struct {
 	base.ITask
-	jobId    byte
-	data     []byte
-	busyData []byte
+	jobId byte
+	data  []byte
 }
 
-func NewTask(midstates int, jobId byte) *Task {
-	dataLen := byte(54 + ((midstates - 1) * 32))
-	t := &Task{ITask: base.NewTask(base.Busy, int(jobId)), jobId: jobId, data: make([]byte, dataLen),
-		busyData: make([]byte, dataLen)}
-	t.initialize(dataLen, t.data, base.Real)
-	t.initialize(dataLen, t.busyData, base.Busy)
+func NewTask(jobId byte) *Task {
+	maxLen := byte(4 + 48 + (32 * 3) + 2)
+	t := &Task{ITask: base.NewTask(int(jobId)), jobId: jobId, data: make([]byte, maxLen)}
+	t.data[0] = 0x21
+	t.data[1] = 0x00
+	t.data[2] = t.jobId & 0x7f
+	t.data[3] = 0x01
 	return t
 }
 
-func (t *Task) initialize(dataLen byte, data []byte, taskType base.TaskType) {
-	data[0] = 0x21
-	data[1] = dataLen
-	data[2] = t.jobId & 0x7f
-	data[3] = 0x01
-	if taskType == base.Busy {
-		for i := 0; i < 12; i++ {
-			data[8+i] = 0xff
-		}
-		checkSum := crc16.ChecksumCCITTFalse(data[:dataLen-2])
-		data[dataLen-2] = byte(checkSum>>8) & 0xff
-		data[dataLen-1] = byte(checkSum & 0xff)
-	}
+func (t *Task) crc(dataLen byte, data []byte) {
+	checkSum := crc16.ChecksumCCITTFalse(data[:dataLen-2])
+	data[dataLen-2] = byte(checkSum>>8) & 0xff
+	data[dataLen-1] = byte(checkSum & 0xff)
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
-	if t.TaskType() == base.Real {
-		return t.data, nil
-	} else {
-		return t.busyData, nil
+	return t.data[:t.data[1]], nil
+}
+
+func (t *Task) Reverse(dataLen byte, data []byte) {
+	for i, j := 4, int(dataLen-3); i < j; i, j = i+1, j-1 {
+		data[i], data[j] = data[j], data[i]
 	}
+}
+
+func (t *Task) Update(midstate ...utils.MidstateBytes) {
+	t.data[1] = byte(4 + 48 + (32 * (len(midstate) - 1)) + 2)
+	midstate[0].Reverse()
+	copy(t.data[4:], midstate[0])
+	t.crc(t.data[1], t.data)
 }

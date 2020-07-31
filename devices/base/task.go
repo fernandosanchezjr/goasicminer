@@ -1,35 +1,34 @@
 package base
 
-type TaskType byte
-
-const (
-	Busy TaskType = iota
-	Real
+import (
+	"github.com/fernandosanchezjr/goasicminer/utils"
+	"log"
 )
+
+type TaskType byte
 
 type ITask interface {
 	MarshalBinary() ([]byte, error)
 	Index() int
-	TaskType() TaskType
+	Update(midstate ...utils.MidstateBytes)
 }
 
 type Task struct {
-	taskType TaskType
-	index    int
+	index int
 }
 
-func NewTask(taskType TaskType, index int) *Task {
-	return &Task{taskType: taskType, index: index}
+func NewTask(index int) *Task {
+	return &Task{index: index}
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
 	return nil, nil
 }
 
-func (t *Task) TaskType() TaskType {
-	return t.taskType
-}
-
 func (t *Task) Index() int {
 	return t.index
+}
+
+func (t *Task) Update(midstate ...utils.MidstateBytes) {
+	log.Printf("%d unhandled midstates", len(midstate))
 }

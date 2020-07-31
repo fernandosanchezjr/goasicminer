@@ -17,19 +17,22 @@ const (
 	//R606NumCores = 144
 	//R606TaskLen = 54
 	//R606RXLen = 7
-	R606MaxJobId = 0x7f
+	R606MaxJobId      = 0x7f
+	R606SendQueueSize = 4
 )
 
 type R606Controller struct {
 	base.IController
 	base.ITaskDispatcher
-	lastReset time.Time
-	frequency float64
-	chipCount int
-	tasks     []*protocol.Task
-	quit      chan struct{}
-	waiter    sync.WaitGroup
-	sendQueue chan base.ITask
+	lastReset    time.Time
+	frequency    float64
+	chipCount    int
+	tasks        []*protocol.Task
+	quit         chan struct{}
+	waiter       sync.WaitGroup
+	sendQueue    base.TaskChan
+	receiveQueue base.TaskChan
+	work         base.WorkChan
 }
 
 func NewR606Controller(controller base.IController) *R606Controller {
@@ -46,6 +49,9 @@ func (rc *R606Controller) Close() {
 	}
 	if rc.sendQueue != nil {
 		close(rc.sendQueue)
+	}
+	if rc.work != nil {
+		close(rc.work)
 	}
 	if waitForReader {
 		rc.waiter.Wait()
@@ -219,27 +225,44 @@ func (rc *R606Controller) SetFrequency(frequency float64) error {
 	return nil
 }
 
+func (rc *R606Controller) setupSampleWork() {
+	midstates := GetWiresharkMidstates()
+	rc.work = make(base.WorkChan, len(midstates))
+	for _, ms := range midstates {
+		rc.work <- base.NewWork(0, ms)
+	}
+}
+
 func (rc *R606Controller) InitializeTasks() error {
-	coreCount := byte(rc.chipCount * 2)
-	rc.sendQueue = make(chan base.ITask, coreCount)
+	//rc.setupSampleWork()
+	rc.sendQueue = make(base.TaskChan, R606SendQueueSize)
+	rc.receiveQueue = make(base.TaskChan, R606MaxJobId)
 	rc.waiter.Add(1)
 	go rc.hashResponseLoop()
 	rc.tasks = make([]*protocol.Task, R606MaxJobId)
 	var j byte
 	for j = 0; j < R606MaxJobId; j++ {
-		rc.tasks[j] = protocol.NewTask(1, j)
-		if j < coreCount {
-			rc.OnSent(rc.tasks[j])
-		} else {
-			rc.OnStart(rc.tasks[j])
-		}
+		rc.tasks[j] = protocol.NewTask(j)
 	}
+	go func() {
+		for pos, task := range rc.tasks {
+			if pos < R606SendQueueSize {
+				rc.OnSent(task)
+			} else {
+				rc.OnReady(task)
+			}
+		}
+	}()
 	rc.ITaskDispatcher.Start()
 	return nil
 }
 
 func (rc *R606Controller) handleStart(task base.ITask, dispatcher base.ITaskDispatcher) {
 	defer dispatcher.OnError(task)
+	if next, ok := <-rc.work; ok {
+		task.Update(next.Midstate)
+		rc.work <- next
+	}
 	dispatcher.OnReady(task)
 }
 
@@ -257,9 +280,7 @@ func (rc *R606Controller) handleSent(task base.ITask, dispatcher base.ITaskDispa
 			panic(err)
 		}
 	}
-	if task.TaskType() == base.Busy {
-		rc.OnReceived(task)
-	}
+	rc.receiveQueue <- task
 }
 
 func (rc *R606Controller) handleReceive(task base.ITask, dispatcher base.ITaskDispatcher) {
@@ -269,34 +290,34 @@ func (rc *R606Controller) handleReceive(task base.ITask, dispatcher base.ITaskDi
 
 func (rc *R606Controller) hashResponseLoop() {
 	var buf bytes.Buffer
+	var r *protocol.TaskResponse
+	var task, next base.ITask
+	var ok bool
 	rb := protocol.NewResponseBlock()
-	var tr *protocol.TaskResponse
-	var pt base.ITask
-	var received bool
-	var i int
+	readTicker := time.NewTicker(25 * time.Millisecond)
 	for {
 		select {
 		case <-rc.quit:
+			readTicker.Stop()
 			rc.waiter.Done()
 			return
-		default:
-			time.Sleep(25 * time.Millisecond)
+		case <-readTicker.C:
 			buf.Reset()
 			if err := rc.Read(&buf); err != nil {
 				log.Println("Error reading response block:", err)
+				continue
 			}
 			if err := rb.UnmarshalBinary(protocol.Separator.Clean(buf.Bytes())); err != nil {
 				log.Println("Error decoding response block:", err)
 				continue
 			}
-			for i = 0; i < rb.Count; i++ {
-				tr = rb.Responses[i]
-				if tr.IsBusyWork() {
-					pt, received = <-rc.sendQueue
-					if received {
-						rc.OnSent(pt)
-					}
+			for i := 0; i < rb.Count; i++ {
+				r = rb.Responses[i]
+				if next, ok = <-rc.sendQueue; ok {
+					rc.OnSent(next)
 				}
+				task = rc.tasks[r.JobId]
+				rc.OnReceived(task)
 			}
 		}
 	}
