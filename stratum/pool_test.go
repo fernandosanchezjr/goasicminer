@@ -16,13 +16,15 @@ func TestPool(t *testing.T) {
 		t.Fatal("No pools in cfg file")
 	}
 	poolConfig := cfg.Pools[0]
-	pool := NewPool(poolConfig)
+	workChan := make(PoolWorkChan)
+	pool := NewPool(poolConfig, workChan)
 	defer pool.Stop()
 	pool.Start()
 	select {
-	case ps := <-pool.PoolSettings:
+	case ps := <-workChan:
 		log.Println("Pool settings:", ps)
-	case <-time.After(5 * time.Second):
+		break
+	case <-time.After(10 * time.Second):
+		break
 	}
-	time.Sleep(10 * time.Second)
 }

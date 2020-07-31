@@ -2,6 +2,7 @@ package stratum
 
 import (
 	"encoding/hex"
+	"fmt"
 	"github.com/epiclabs-io/elastic"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
@@ -39,20 +40,20 @@ type Pool struct {
 	prevHash        []byte
 	coinBase1       []byte
 	coinBase2       []byte
-	merkleBranch    [][]byte
+	merkleBranches  [][]byte
 	version         []byte
 	nbits           []byte
 	ntime           []byte
 	cleanJobs       bool
-	PoolSettings    PoolSettingsChan
+	workChan        PoolWorkChan
 }
 
-func NewPool(config config.Pool) *Pool {
+func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
 	p := &Pool{
 		config:          config,
 		status:          Disconnected,
 		pendingCommands: make(map[uint64]interface{}),
-		PoolSettings:    make(PoolSettingsChan),
+		workChan:        workChan,
 	}
 	return p
 }
@@ -64,6 +65,15 @@ func (p *Pool) Start() {
 	p.quit = make(chan struct{})
 	p.wg.Add(1)
 	go p.loop()
+}
+
+func (p *Pool) Stop() {
+	close(p.quit)
+	p.wg.Wait()
+}
+
+func (p *Pool) String() string {
+	return fmt.Sprint("stratum ", p.config.User, "@", p.config.URL)
 }
 
 func (p *Pool) loop() {
@@ -88,6 +98,11 @@ func (p *Pool) loop() {
 	}
 }
 
+func (p *Pool) retryTimeout() {
+	log.Println("Retrying in", RetryTimeout)
+	time.Sleep(RetryTimeout)
+}
+
 func (p *Pool) handleQuit() {
 	if p.conn == nil {
 		return
@@ -103,8 +118,7 @@ func (p *Pool) handleQuit() {
 func (p *Pool) handleDisconnected() {
 	if conn, err := NewConnection(p.config.URL); err != nil {
 		log.Println("Error connecting to pool", p.config.URL, "-", err)
-		log.Println("Retrying in", RetryTimeout)
-		time.Sleep(RetryTimeout)
+		p.retryTimeout()
 	} else {
 		p.conn = conn
 		p.status = Connected
@@ -115,8 +129,7 @@ func (p *Pool) handleConnected() {
 	subscribe := protocol.NewSubscribe()
 	if err := p.conn.Call(subscribe); err != nil {
 		log.Println("Error subscribing to pool", p.config.URL, "-", err)
-		log.Println("Retrying in", RetryTimeout)
-		time.Sleep(RetryTimeout)
+		p.retryTimeout()
 	} else {
 		p.status = Subscribing
 		p.pendingCommands[subscribe.Id] = subscribe
@@ -127,8 +140,7 @@ func (p *Pool) handleSubscribed() {
 	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
 	if err := p.conn.Call(authorize); err != nil {
 		log.Println("Error authorizing to pool", p.config.URL, "-", err)
-		log.Println("Retrying in", RetryTimeout)
-		time.Sleep(RetryTimeout)
+		p.retryTimeout()
 		if err := p.conn.Close(); err != nil {
 			log.Println("Error disconnecting from", p.config.URL)
 		}
@@ -145,9 +157,8 @@ func (p *Pool) receiveReply() {
 		if reply, err := p.conn.GetReply(); err == io.EOF {
 			p.conn = nil
 			p.status = Disconnected
-			log.Println("Pool disconnected", p.config.URL)
-			log.Println("Retrying in", RetryTimeout)
-			time.Sleep(RetryTimeout)
+			log.Println("Pool", p.config.URL, "disconnected")
+			p.retryTimeout()
 		} else if err, ok := err.(net.Error); ok && err.Timeout() {
 			return
 		} else if err != nil {
@@ -160,11 +171,6 @@ func (p *Pool) receiveReply() {
 			}
 		}
 	}
-}
-
-func (p *Pool) Stop() {
-	close(p.quit)
-	p.wg.Wait()
 }
 
 func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
@@ -190,11 +196,10 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 		} else {
 			if ar.Result {
 				p.status = Authorized
-				log.Println("Successfully authorized with pool", p.config.URL)
+				log.Println("Successfully authorized", p)
 			} else {
 				log.Println("Error authorizing to pool", p.config.URL, "-", err)
-				log.Println("Retrying in", RetryTimeout)
-				time.Sleep(RetryTimeout)
+				p.retryTimeout()
 				if err := p.conn.Close(); err != nil {
 					log.Println("Error disconnecting from", p.config.URL)
 				}
@@ -263,14 +268,14 @@ func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 		p.coinBase2 = data
 	}
 	if err := elastic.Set(&merkleBranch, reply.Params[4]); err != nil {
-		log.Println("Error decoding mining.notify merkleBranch:", err)
+		log.Println("Error decoding mining.notify merkleBranches:", err)
 	}
-	p.merkleBranch = make([][]byte, len(merkleBranch))
+	p.merkleBranches = make([][]byte, len(merkleBranch))
 	for pos, branch := range merkleBranch {
 		if data, err := hex.DecodeString(branch); err != nil {
-			log.Println("Error decoding mining.notify merkleBranch hex:", err)
+			log.Println("Error decoding mining.notify merkleBranches hex:", err)
 		} else {
-			p.merkleBranch[pos] = data
+			p.merkleBranches[pos] = data
 		}
 	}
 	if err := elastic.Set(&version, reply.Params[5]); err != nil {
@@ -300,5 +305,5 @@ func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 	if err := elastic.Set(&p.cleanJobs, reply.Params[8]); err != nil {
 		log.Println("Error decoding mining.notify cleanJobs:", err)
 	}
-	p.PoolSettings <- NewPoolSettings(p)
+	p.workChan <- NewPoolWork(p)
 }
