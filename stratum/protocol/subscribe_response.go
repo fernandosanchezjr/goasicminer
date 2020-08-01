@@ -26,7 +26,7 @@ func NewSubscribeResponse(reply *Reply) (*SubscribeResponse, error) {
 		return nil, err
 	}
 	if len(result) != 3 {
-		return nil, errors.New("Invalid SubscribeResponse result")
+		return nil, errors.New("invalid SubscribeResponse result")
 	}
 	var rawTuples [][]interface{}
 	if err := elastic.Set(&rawTuples, result[0]); err != nil {
@@ -34,7 +34,7 @@ func NewSubscribeResponse(reply *Reply) (*SubscribeResponse, error) {
 	}
 	for _, rawTuple := range rawTuples {
 		if len(rawTuple) != 2 {
-			return nil, errors.New("Invalid SubscribeResponse result tuple")
+			return nil, errors.New("invalid SubscribeResponse result tuple")
 		}
 		var key, value string
 		if err := elastic.Set(&key, rawTuple[0]); err != nil {

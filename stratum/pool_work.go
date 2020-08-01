@@ -24,20 +24,20 @@ func NewPoolWork(pool *Pool) *PoolWork {
 	return &PoolWork{
 		ExtraNonce1:    pool.extraNonce1,
 		ExtraNonce2Len: pool.extraNonce2Len,
-		Difficulty:     pool.difficulty,
-		JobId:          pool.jobId,
-		PrevHash:       pool.prevHash,
-		CoinBase1:      pool.coinBase1,
-		CoinBase2:      pool.coinBase2,
-		MerkleBranches: pool.merkleBranches,
-		Version:        pool.version,
-		Nbits:          pool.nbits,
-		Ntime:          pool.ntime,
-		CleanJobs:      pool.cleanJobs,
+		Difficulty:     pool.setDifficulty.Difficulty,
+		JobId:          pool.notify.JobId,
+		PrevHash:       pool.notify.PrevHash,
+		CoinBase1:      pool.notify.CoinBase1,
+		CoinBase2:      pool.notify.CoinBase2,
+		MerkleBranches: pool.notify.MerkleBranches,
+		Version:        pool.notify.Version,
+		Nbits:          pool.notify.NBits,
+		Ntime:          pool.notify.NTime,
+		CleanJobs:      pool.notify.CleanJobs,
 		Pool:           pool,
 	}
 }
 
 func (ps *PoolWork) String() string {
-	return fmt.Sprint("Job ", ps.JobId, " from ", ps.Pool)
+	return fmt.Sprint("Work ", ps.JobId, " difficulty ", ps.Difficulty, " from ", ps.Pool)
 }

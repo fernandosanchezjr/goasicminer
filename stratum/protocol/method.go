@@ -1,5 +1,9 @@
 package protocol
 
+type IMethod interface {
+	SetId(id uint64)
+}
+
 type Method struct {
 	Id         uint64        `json:"id"`
 	MethodName string        `json:"method"`

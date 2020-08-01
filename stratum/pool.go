@@ -1,9 +1,7 @@
 package stratum
 
 import (
-	"encoding/hex"
 	"fmt"
-	"github.com/epiclabs-io/elastic"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"io"
@@ -32,19 +30,11 @@ type Pool struct {
 	conn            *Connection
 	status          PoolState
 	wg              sync.WaitGroup
-	pendingCommands map[uint64]interface{}
+	pendingCommands map[uint64]protocol.IMethod
 	extraNonce1     uint64
 	extraNonce2Len  int
-	difficulty      uint64
-	jobId           string
-	prevHash        []byte
-	coinBase1       []byte
-	coinBase2       []byte
-	merkleBranches  [][]byte
-	version         []byte
-	nbits           []byte
-	ntime           []byte
-	cleanJobs       bool
+	setDifficulty   *protocol.SetDifficulty
+	notify          *protocol.Notify
 	workChan        PoolWorkChan
 }
 
@@ -52,7 +42,7 @@ func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
 	p := &Pool{
 		config:          config,
 		status:          Disconnected,
-		pendingCommands: make(map[uint64]interface{}),
+		pendingCommands: make(map[uint64]protocol.IMethod),
 		workChan:        workChan,
 	}
 	return p
@@ -73,7 +63,7 @@ func (p *Pool) Stop() {
 }
 
 func (p *Pool) String() string {
-	return fmt.Sprint("stratum ", p.config.User, "@", p.config.URL)
+	return fmt.Sprint(p.config.User, "@", p.config.URL)
 }
 
 func (p *Pool) loop() {
@@ -103,16 +93,20 @@ func (p *Pool) retryTimeout() {
 	time.Sleep(RetryTimeout)
 }
 
+func (p *Pool) disconnect() {
+	if err := p.conn.Close(); err != nil {
+		log.Println("Pool", p, "disconnect error:", err)
+	}
+	p.conn = nil
+	p.status = Disconnected
+}
+
 func (p *Pool) handleQuit() {
 	if p.conn == nil {
 		return
 	}
-	if err := p.conn.Close(); err != nil {
-		log.Println("Error disconnecting from", p.config.URL)
-	}
-	p.conn = nil
+	p.disconnect()
 	p.quit = nil
-	p.status = Disconnected
 }
 
 func (p *Pool) handleDisconnected() {
@@ -126,10 +120,12 @@ func (p *Pool) handleDisconnected() {
 }
 
 func (p *Pool) handleConnected() {
+	log.Println("Connected to", p)
 	subscribe := protocol.NewSubscribe()
 	if err := p.conn.Call(subscribe); err != nil {
-		log.Println("Error subscribing to pool", p.config.URL, "-", err)
+		log.Println("Pool", p, "subscribe error:", err)
 		p.retryTimeout()
+		p.disconnect()
 	} else {
 		p.status = Subscribing
 		p.pendingCommands[subscribe.Id] = subscribe
@@ -137,15 +133,12 @@ func (p *Pool) handleConnected() {
 }
 
 func (p *Pool) handleSubscribed() {
+	log.Println("Subscribed to", p)
 	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
 	if err := p.conn.Call(authorize); err != nil {
-		log.Println("Error authorizing to pool", p.config.URL, "-", err)
+		log.Println("Pool", p, "authorization error:", err)
 		p.retryTimeout()
-		if err := p.conn.Close(); err != nil {
-			log.Println("Error disconnecting from", p.config.URL)
-		}
-		p.conn = nil
-		p.status = Disconnected
+		p.disconnect()
 	} else {
 		p.status = Authorizing
 		p.pendingCommands[authorize.Id] = authorize
@@ -157,15 +150,15 @@ func (p *Pool) receiveReply() {
 		if reply, err := p.conn.GetReply(); err == io.EOF {
 			p.conn = nil
 			p.status = Disconnected
-			log.Println("Pool", p.config.URL, "disconnected")
+			log.Println("Pool", p, "disconnected")
 			p.retryTimeout()
 		} else if err, ok := err.(net.Error); ok && err.Timeout() {
 			return
 		} else if err != nil {
-			log.Println("Pool", p.config.URL, "error:", err)
+			log.Println("Pool", p, "receive error:", err)
 		} else if reply != nil {
 			if reply.IsMethod() {
-				p.handleRemoteMethodCall(reply)
+				p.handleMethodCall(reply)
 			} else {
 				p.handleMethodResponse(reply)
 			}
@@ -176,14 +169,14 @@ func (p *Pool) receiveReply() {
 func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	method, ok := p.pendingCommands[reply.Id]
 	if !ok {
-		log.Println("No command for reply", reply)
+		log.Println("Pool", p, "received unknown reply:", reply)
 		return
 	}
 	switch m := method.(type) {
 	case *protocol.Subscribe:
 		delete(p.pendingCommands, m.Id)
 		if sr, err := protocol.NewSubscribeResponse(reply); err != nil {
-			log.Println("Error decoding Subscribe response:", err)
+			log.Println("Pool", p, "subscribe response error:", err)
 		} else {
 			p.extraNonce1 = sr.ExtraNonce1
 			p.extraNonce2Len = sr.ExtraNonce2Len
@@ -192,118 +185,62 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	case *protocol.Authorize:
 		delete(p.pendingCommands, m.Id)
 		if ar, err := protocol.NewAuthorizeResponse(reply); err != nil {
-			log.Println("Error decoding Authorize response:", err)
+			log.Println("Pool", p, "authorize response error:", err)
 		} else {
 			if ar.Result {
 				p.status = Authorized
-				log.Println("Successfully authorized", p)
+				log.Println("Pool", p, "authorized")
+				p.processWork()
 			} else {
-				log.Println("Error authorizing to pool", p.config.URL, "-", err)
+				log.Println("Pool", p, "autorization failed")
 				p.retryTimeout()
-				if err := p.conn.Close(); err != nil {
-					log.Println("Error disconnecting from", p.config.URL)
-				}
-				p.conn = nil
-				p.status = Disconnected
+				p.disconnect()
 			}
 		}
 	default:
-		log.Println("Unknown method response:", reply)
+		log.Println("Pool", p, "received unknown response:", reply)
 	}
 }
 
-func (p *Pool) handleRemoteMethodCall(reply *protocol.Reply) {
+func (p *Pool) handleMethodCall(reply *protocol.Reply) {
 	switch reply.MethodName {
 	case "mining.set_difficulty":
 		p.handleMiningSetDifficulty(reply)
 	case "mining.notify":
 		p.handleMiningNotify(reply)
 	default:
-		log.Println("Unknown remote method:", reply)
+		log.Println("Pool", p, "received unknown remote method:", reply)
 	}
 }
 
 func (p *Pool) handleMiningSetDifficulty(reply *protocol.Reply) {
-	if len(reply.Params) != 1 {
-		log.Println("Invalid params for", reply.MethodName)
-		return
-	}
-	if err := elastic.Set(&p.difficulty, reply.Params[0]); err != nil {
-		log.Println("Error decoding mining.set_difficulty response:", err)
+	if sd, err := protocol.NewSetDifficulty(reply); err != nil {
+		log.Println("Pool", p, "SetDifficulty error:", err)
+	} else {
+		log.Println("Pool", p, "set difficulty to", sd)
+		p.setDifficulty = sd
+		p.processWork()
 	}
 }
 
 func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
-	if len(reply.Params) != 9 {
-		log.Println("Invalid params for", reply.MethodName)
+	if n, err := protocol.NewNotify(reply); err != nil {
+		log.Println("Pool", p, "Notify error:", err)
+	} else {
+		p.notify = n
+		p.processWork()
+	}
+}
+
+func (p *Pool) processWork() {
+	if p.status != Authorized {
 		return
 	}
-	var prevHash, coinb1, coinb2, version, nbits, ntime string
-	var merkleBranch []string
-	if err := elastic.Set(&p.jobId, reply.Params[0]); err != nil {
-		log.Println("Error decoding mining.notify jobId:", err)
+	if p.setDifficulty == nil {
+		return
 	}
-	if err := elastic.Set(&prevHash, reply.Params[1]); err != nil {
-		log.Println("Error decoding mining.notify prevHash:", err)
-	}
-	if data, err := hex.DecodeString(prevHash); err != nil {
-		log.Println("Error decoding mining.notify prevHash hex:", err)
-	} else {
-		p.prevHash = data
-	}
-	if err := elastic.Set(&coinb1, reply.Params[2]); err != nil {
-		log.Println("Error decoding mining.notify coinb1:", err)
-	}
-	if data, err := hex.DecodeString(coinb1); err != nil {
-		log.Println("Error decoding mining.notify coinb1 hex:", err)
-	} else {
-		p.coinBase1 = data
-	}
-	if err := elastic.Set(&coinb2, reply.Params[3]); err != nil {
-		log.Println("Error decoding mining.notify coinb2:", err)
-	}
-	if data, err := hex.DecodeString(coinb2); err != nil {
-		log.Println("Error decoding mining.notify coinb2 hex:", err)
-	} else {
-		p.coinBase2 = data
-	}
-	if err := elastic.Set(&merkleBranch, reply.Params[4]); err != nil {
-		log.Println("Error decoding mining.notify merkleBranches:", err)
-	}
-	p.merkleBranches = make([][]byte, len(merkleBranch))
-	for pos, branch := range merkleBranch {
-		if data, err := hex.DecodeString(branch); err != nil {
-			log.Println("Error decoding mining.notify merkleBranches hex:", err)
-		} else {
-			p.merkleBranches[pos] = data
-		}
-	}
-	if err := elastic.Set(&version, reply.Params[5]); err != nil {
-		log.Println("Error decoding mining.notify version:", err)
-	}
-	if data, err := hex.DecodeString(version); err != nil {
-		log.Println("Error decoding mining.notify version hex:", err)
-	} else {
-		p.version = data
-	}
-	if err := elastic.Set(&nbits, reply.Params[6]); err != nil {
-		log.Println("Error decoding mining.notify nbits:", err)
-	}
-	if data, err := hex.DecodeString(nbits); err != nil {
-		log.Println("Error decoding mining.notify nbits hex:", err)
-	} else {
-		p.nbits = data
-	}
-	if err := elastic.Set(&ntime, reply.Params[7]); err != nil {
-		log.Println("Error decoding mining.notify ntime:", err)
-	}
-	if data, err := hex.DecodeString(ntime); err != nil {
-		log.Println("Error decoding mining.notify ntime hex:", err)
-	} else {
-		p.ntime = data
-	}
-	if err := elastic.Set(&p.cleanJobs, reply.Params[8]); err != nil {
-		log.Println("Error decoding mining.notify cleanJobs:", err)
+	if p.notify == nil {
+		return
 	}
 	p.workChan <- NewPoolWork(p)
 }

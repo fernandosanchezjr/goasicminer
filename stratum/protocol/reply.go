@@ -17,7 +17,7 @@ func (r *Reply) HasError() error {
 		return nil
 	}
 	if errorText, ok := r.Error[1].(string); !ok {
-		return errors.New("Unknown error")
+		return errors.New("unknown error")
 	} else {
 		return errors.New(errorText)
 	}

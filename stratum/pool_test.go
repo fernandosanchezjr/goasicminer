@@ -22,7 +22,7 @@ func TestPool(t *testing.T) {
 	pool.Start()
 	select {
 	case ps := <-workChan:
-		log.Println("Pool settings:", ps)
+		log.Println(ps)
 		break
 	case <-time.After(10 * time.Second):
 		break

@@ -60,7 +60,7 @@ func (c *Connection) NextId() uint64 {
 	return atomic.AddUint64(&c.id, 1)
 }
 
-func (c *Connection) Call(command protocol.Command) error {
+func (c *Connection) Call(command protocol.IMethod) error {
 	command.SetId(c.NextId())
 	return c.writer.Encode(command)
 }
