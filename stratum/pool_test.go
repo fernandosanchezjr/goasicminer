@@ -21,8 +21,8 @@ func TestPool(t *testing.T) {
 	defer pool.Stop()
 	pool.Start()
 	select {
-	case ps := <-workChan:
-		log.Println(ps)
+	case pw := <-workChan:
+		log.Println(pw)
 		break
 	case <-time.After(10 * time.Second):
 		break

@@ -1,0 +1,20 @@
+{
+  "id": 1,
+  "method": "",
+  "params": null,
+  "result": [
+    [
+      [
+        "mining.set_difficulty",
+        "1"
+      ],
+      [
+        "mining.notify",
+        "1"
+      ]
+    ],
+    "2a6502002aa65f",
+    8
+  ],
+  "error": null
+}

@@ -3,12 +3,22 @@ package stratum
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
+	"log"
 	"net"
 	"sync/atomic"
 	"time"
 )
+
+type Direction int
+
+var debugRPC bool
+
+func init() {
+	flag.BoolVar(&debugRPC, "log-rpc", false, "log RPC traffic")
+}
 
 type Connection struct {
 	conn   *net.TCPConn
@@ -60,8 +70,19 @@ func (c *Connection) NextId() uint64 {
 	return atomic.AddUint64(&c.id, 1)
 }
 
+func (c *Connection) logRPC(prefix string, value interface{}) {
+	if data, err := json.Marshal(value); err != nil {
+		log.Println("Debug marshaling error:", err)
+	} else {
+		log.Println(prefix, string(data))
+	}
+}
+
 func (c *Connection) Call(command protocol.IMethod) error {
 	command.SetId(c.NextId())
+	if debugRPC {
+		c.logRPC("RPC out:", command)
+	}
 	return c.writer.Encode(command)
 }
 
@@ -73,6 +94,9 @@ func (c *Connection) GetReply() (*protocol.Reply, error) {
 	if err := c.reader.Decode(&r); err != nil {
 		return nil, err
 	} else {
+		if debugRPC {
+			c.logRPC("RPC in:", r)
+		}
 		return r, nil
 	}
 }

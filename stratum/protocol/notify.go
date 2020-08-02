@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"github.com/epiclabs-io/elastic"
@@ -14,7 +15,7 @@ type Notify struct {
 	MerkleBranches [][]byte
 	Version        []byte
 	NBits          []byte
-	NTime          []byte
+	NTime          uint32
 	CleanJobs      bool
 }
 
@@ -85,7 +86,7 @@ func NewNotify(reply *Reply) (*Notify, error) {
 	if data, err := hex.DecodeString(ntime); err != nil {
 		return nil, err
 	} else {
-		n.NTime = data
+		n.NTime = binary.BigEndian.Uint32(data)
 	}
 	if err := elastic.Set(&n.CleanJobs, reply.Params[8]); err != nil {
 		return nil, err

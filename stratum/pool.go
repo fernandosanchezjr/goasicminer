@@ -31,8 +31,7 @@ type Pool struct {
 	status          PoolState
 	wg              sync.WaitGroup
 	pendingCommands map[uint64]protocol.IMethod
-	extraNonce1     uint64
-	extraNonce2Len  int
+	subscription    *protocol.SubscribeResponse
 	setDifficulty   *protocol.SetDifficulty
 	notify          *protocol.Notify
 	workChan        PoolWorkChan
@@ -178,8 +177,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 		if sr, err := protocol.NewSubscribeResponse(reply); err != nil {
 			log.Println("Pool", p, "subscribe response error:", err)
 		} else {
-			p.extraNonce1 = sr.ExtraNonce1
-			p.extraNonce2Len = sr.ExtraNonce2Len
+			p.subscription = sr
 			p.status = Subscribed
 		}
 	case *protocol.Authorize:
@@ -236,11 +234,14 @@ func (p *Pool) processWork() {
 	if p.status != Authorized {
 		return
 	}
+	if p.subscription == nil {
+		return
+	}
 	if p.setDifficulty == nil {
 		return
 	}
 	if p.notify == nil {
 		return
 	}
-	p.workChan <- NewPoolWork(p)
+	p.workChan <- NewPoolWork(p.subscription, p.setDifficulty, p.notify, p)
 }

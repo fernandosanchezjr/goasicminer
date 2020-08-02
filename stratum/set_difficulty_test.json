@@ -1,0 +1,9 @@
+{
+  "id": 0,
+  "method": "mining.set_difficulty",
+  "params": [
+    8192
+  ],
+  "result": null,
+  "error": null
+}
