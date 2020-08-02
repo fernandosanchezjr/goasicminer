@@ -12,16 +12,23 @@ import (
 var configPath string
 
 func init() {
+	configFolder := getOrCreateConfigFolder()
+	defaultConfigPath := path.Join(configFolder, "config.yaml")
+	flag.StringVar(&configPath, "config", defaultConfigPath, "specify config file")
+}
+
+func getOrCreateConfigFolder() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatal(err)
+		log.Println("could not find home folder")
+		return ""
 	}
 	configFolder := path.Join(home, ".goasicminer")
 	if err := os.MkdirAll(configFolder, 0700); err != nil {
-		panic(err)
+		log.Println("Could ot create", configFolder)
+		return ""
 	}
-	defaultConfigPath := path.Join(configFolder, "config.yaml")
-	flag.StringVar(&configPath, "config", defaultConfigPath, "specify config file")
+	return configFolder
 }
 
 func LoadConfig() (*Config, error) {
