@@ -39,7 +39,7 @@ func TestTaskDispatcher(t *testing.T) {
 	}
 	td := NewTaskDispatcher(1, startHandler, readyHandler, sentHandler, receivedHandler)
 	td.Start()
-	task := NewTask(Busy, 1)
+	task := NewTask(1)
 	td.OnStart(task)
 	wg.Wait()
 	td.Stop()
