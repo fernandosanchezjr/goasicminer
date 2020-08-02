@@ -21,34 +21,41 @@ func unmarshalFile(fileName string, value interface{}) error {
 	return nil
 }
 
-func TestPoolWork(t *testing.T) {
+func unmarshalTestWork() (*PoolWork, error) {
 	var reply *protocol.Reply
 	var sr *protocol.SubscribeResponse
 	var sd *protocol.SetDifficulty
 	var n *protocol.Notify
 	if err := unmarshalFile("subscribe_test.json", &reply); err != nil {
-		t.Fatal(err)
+		return nil, err
 	} else {
 		if sr, err = protocol.NewSubscribeResponse(reply); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 	if err := unmarshalFile("set_difficulty_test.json", &reply); err != nil {
-		t.Fatal(err)
+		return nil, err
 	} else {
 		if sd, err = protocol.NewSetDifficulty(reply); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 	if err := unmarshalFile("notify_test.json", &reply); err != nil {
-		t.Fatal(err)
+		return nil, err
 	} else {
 		if n, err = protocol.NewNotify(reply); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 	pw := NewPoolWork(sr, sd, n, nil)
-	log.Println(pw)
+	return pw, nil
+}
+
+func TestPoolWork(t *testing.T) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		t.Fatal(err)
+	}
 	coinbase := pw.Coinbase()
 	hex_coinbase := hex.EncodeToString(coinbase)
 	expected_coinbase := "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4a031ccb0" +
@@ -85,7 +92,6 @@ func TestPoolWork(t *testing.T) {
 	expected_plain_header := "20000000bd3e4f2c6d8b14c9d677cb428a124dcae58c5530000f791f00000000000000008de8f457cffef50" +
 		"2d75ada232b2e68be61724c35f48432c7d0cac77d7b1dde505f2606591710b4f80000000000000080000000000000000000000000000" +
 		"0000000000000000000000000000000000000000000000000000080020000"
-	log.Println(hex_plain_header)
 	if hex_plain_header != expected_plain_header {
 		for i := 0; i < len(hex_plain_header); i++ {
 			if len(expected_plain_header) <= i {
@@ -98,5 +104,16 @@ func TestPoolWork(t *testing.T) {
 			}
 		}
 		t.Fail()
+	}
+}
+
+func BenchmarkPoolWork_PlainHeader(b *testing.B) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		pw.PlainHeader()
 	}
 }
