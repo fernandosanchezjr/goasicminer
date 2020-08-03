@@ -26,6 +26,7 @@ func unmarshalTestWork() (*PoolWork, error) {
 	var sr *protocol.SubscribeResponse
 	var sd *protocol.SetDifficulty
 	var n *protocol.Notify
+	cf := &protocol.ConfigureResponse{}
 	if err := unmarshalFile("subscribe_test.json", &reply); err != nil {
 		return nil, err
 	} else {
@@ -47,7 +48,7 @@ func unmarshalTestWork() (*PoolWork, error) {
 			return nil, err
 		}
 	}
-	pw := NewPoolWork(sr, sd, n, nil)
+	pw := NewPoolWork(sr, cf, sd, n, nil)
 	return pw, nil
 }
 

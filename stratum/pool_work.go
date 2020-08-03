@@ -12,45 +12,50 @@ var paddingBytes = []byte{0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 2, 0, 0}
 
 type PoolWork struct {
-	ExtraNonce1    uint64
-	ExtraNonce2    uint64
-	ExtraNonce2Len int
-	Difficulty     protocol.Difficulty
-	JobId          string
-	PrevHash       []byte
-	CoinBase1      []byte
-	CoinBase2      []byte
-	MerkleBranches [][]byte
-	Version        []byte
-	Nbits          []byte
-	Ntime          uint32
-	CleanJobs      bool
-	Nonce          uint32
-	Pool           *Pool
+	ExtraNonce1        uint64
+	ExtraNonce2        uint64
+	ExtraNonce2Len     int
+	VersionRolling     bool
+	VersionRollingMask uint32
+	Difficulty         protocol.Difficulty
+	JobId              string
+	PrevHash           []byte
+	CoinBase1          []byte
+	CoinBase2          []byte
+	MerkleBranches     [][]byte
+	Version            uint32
+	Nbits              []byte
+	Ntime              uint32
+	CleanJobs          bool
+	Nonce              uint32
+	Pool               *Pool
 }
 
 type PoolWorkChan chan *PoolWork
 
 func NewPoolWork(
 	subscription *protocol.SubscribeResponse,
+	configuration *protocol.ConfigureResponse,
 	setDifficulty *protocol.SetDifficulty,
 	notify *protocol.Notify,
 	pool *Pool,
 ) *PoolWork {
 	return &PoolWork{
-		ExtraNonce1:    subscription.ExtraNonce1,
-		ExtraNonce2Len: subscription.ExtraNonce2Len,
-		Difficulty:     setDifficulty.Difficulty,
-		JobId:          notify.JobId,
-		PrevHash:       notify.PrevHash,
-		CoinBase1:      notify.CoinBase1,
-		CoinBase2:      notify.CoinBase2,
-		MerkleBranches: notify.MerkleBranches,
-		Version:        notify.Version,
-		Nbits:          notify.NBits,
-		Ntime:          notify.NTime,
-		CleanJobs:      notify.CleanJobs,
-		Pool:           pool,
+		ExtraNonce1:        subscription.ExtraNonce1,
+		ExtraNonce2Len:     subscription.ExtraNonce2Len,
+		VersionRolling:     configuration.VersionRolling,
+		VersionRollingMask: configuration.VersionRollingMask,
+		Difficulty:         setDifficulty.Difficulty,
+		JobId:              notify.JobId,
+		PrevHash:           notify.PrevHash,
+		CoinBase1:          notify.CoinBase1,
+		CoinBase2:          notify.CoinBase2,
+		MerkleBranches:     notify.MerkleBranches,
+		Version:            notify.Version,
+		Nbits:              notify.NBits,
+		Ntime:              notify.NTime,
+		CleanJobs:          notify.CleanJobs,
+		Pool:               pool,
 	}
 }
 
@@ -84,7 +89,7 @@ func (pw *PoolWork) MerkleRoot() []byte {
 func (pw *PoolWork) PlainHeader() []byte {
 	headerBytes := make([]byte, 0, 128)
 	headerBuf := bytes.NewBuffer(headerBytes)
-	headerBuf.Write(pw.Version)
+	_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
 	headerBuf.Write(pw.PrevHash)
 	headerBuf.Write(pw.MerkleRoot())
 	_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)

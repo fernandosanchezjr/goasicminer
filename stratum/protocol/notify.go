@@ -13,7 +13,7 @@ type Notify struct {
 	CoinBase1      []byte
 	CoinBase2      []byte
 	MerkleBranches [][]byte
-	Version        []byte
+	Version        uint32
 	NBits          []byte
 	NTime          uint32
 	CleanJobs      bool
@@ -70,7 +70,7 @@ func NewNotify(reply *Reply) (*Notify, error) {
 	if data, err := hex.DecodeString(version); err != nil {
 		return nil, err
 	} else {
-		n.Version = data
+		n.Version = binary.BigEndian.Uint32(data)
 	}
 	if err := elastic.Set(&nbits, reply.Params[6]); err != nil {
 		return nil, err

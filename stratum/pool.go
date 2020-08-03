@@ -18,6 +18,8 @@ const (
 	Connected
 	Subscribing
 	Subscribed
+	Configuring
+	Configured
 	Authorizing
 	Authorized
 )
@@ -34,6 +36,7 @@ type Pool struct {
 	subscription    *protocol.SubscribeResponse
 	setDifficulty   *protocol.SetDifficulty
 	notify          *protocol.Notify
+	configuration   *protocol.ConfigureResponse
 	workChan        PoolWorkChan
 }
 
@@ -81,6 +84,8 @@ func (p *Pool) loop() {
 				p.handleConnected()
 			case Subscribed:
 				p.handleSubscribed()
+			case Configured:
+				p.handleConfigured()
 			}
 			p.receiveReply()
 		}
@@ -131,19 +136,6 @@ func (p *Pool) handleConnected() {
 	}
 }
 
-func (p *Pool) handleSubscribed() {
-	log.Println("Subscribed to", p)
-	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
-	if err := p.conn.Call(authorize); err != nil {
-		log.Println("Pool", p, "authorization error:", err)
-		p.retryTimeout()
-		p.disconnect()
-	} else {
-		p.status = Authorizing
-		p.pendingCommands[authorize.Id] = authorize
-	}
-}
-
 func (p *Pool) receiveReply() {
 	if p.status != Disconnected {
 		if reply, err := p.conn.GetReply(); err == io.EOF {
@@ -162,6 +154,31 @@ func (p *Pool) receiveReply() {
 				p.handleMethodResponse(reply)
 			}
 		}
+	}
+}
+
+func (p *Pool) handleSubscribed() {
+	log.Println("Subscribed to", p)
+	configure := protocol.NewConfigure()
+	if err := p.conn.Call(configure); err != nil {
+		log.Println("Pool", p, "configuration error:", err)
+		p.retryTimeout()
+		p.disconnect()
+	} else {
+		p.status = Configuring
+		p.pendingCommands[configure.Id] = configure
+	}
+}
+
+func (p *Pool) handleConfigured() {
+	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
+	if err := p.conn.Call(authorize); err != nil {
+		log.Println("Pool", p, "authorization error:", err)
+		p.retryTimeout()
+		p.disconnect()
+	} else {
+		p.status = Authorizing
+		p.pendingCommands[authorize.Id] = authorize
 	}
 }
 
@@ -195,6 +212,14 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 				p.disconnect()
 			}
 		}
+	case *protocol.Configure:
+		delete(p.pendingCommands, m.Id)
+		if cr, err := protocol.NewConfigureResponse(reply); err != nil {
+			log.Println("Pool", p, "configure response error:", err)
+		} else {
+			p.status = Configured
+			p.configuration = cr
+		}
 	default:
 		log.Println("Pool", p, "received unknown response:", reply)
 	}
@@ -206,6 +231,8 @@ func (p *Pool) handleMethodCall(reply *protocol.Reply) {
 		p.handleMiningSetDifficulty(reply)
 	case "mining.notify":
 		p.handleMiningNotify(reply)
+	case "mining.set_version_mask":
+		p.handleSetVersionMask(reply)
 	default:
 		log.Println("Pool", p, "received unknown remote method:", reply)
 	}
@@ -230,11 +257,23 @@ func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 	}
 }
 
+func (p *Pool) handleSetVersionMask(reply *protocol.Reply) {
+	if svm, err := protocol.NewSetVersionMask(reply); err != nil {
+		log.Println("Pool", p, "SetVersionMask error:", err)
+	} else {
+		p.configuration.VersionRollingMask = svm.VersionRollingMask
+		p.processWork()
+	}
+}
+
 func (p *Pool) processWork() {
 	if p.status != Authorized {
 		return
 	}
 	if p.subscription == nil {
+		return
+	}
+	if p.configuration == nil {
 		return
 	}
 	if p.setDifficulty == nil {
@@ -243,5 +282,5 @@ func (p *Pool) processWork() {
 	if p.notify == nil {
 		return
 	}
-	p.workChan <- NewPoolWork(p.subscription, p.setDifficulty, p.notify, p)
+	p.workChan <- NewPoolWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
 }
