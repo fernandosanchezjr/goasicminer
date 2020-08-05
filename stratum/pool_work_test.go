@@ -1,6 +1,7 @@
 package stratum
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
@@ -26,6 +27,7 @@ func unmarshalTestWork() (*PoolWork, error) {
 	var sr *protocol.SubscribeResponse
 	var sd *protocol.SetDifficulty
 	var n *protocol.Notify
+	var svm *protocol.SetVersionMask
 	cf := &protocol.ConfigureResponse{}
 	if err := unmarshalFile("subscribe_test.json", &reply); err != nil {
 		return nil, err
@@ -46,6 +48,16 @@ func unmarshalTestWork() (*PoolWork, error) {
 	} else {
 		if n, err = protocol.NewNotify(reply); err != nil {
 			return nil, err
+		}
+	}
+	if err := unmarshalFile("set_version_mask_test.json", &reply); err != nil {
+		return nil, err
+	} else {
+		if svm, err = protocol.NewSetVersionMask(reply); err != nil {
+			return nil, err
+		} else {
+			cf.VersionRolling = true
+			cf.VersionRollingMask = svm.VersionRollingMask
 		}
 	}
 	pw := NewPoolWork(sr, cf, sd, n, nil)
@@ -91,8 +103,7 @@ func TestPoolWork(t *testing.T) {
 	plain_header := pw.PlainHeader()
 	hex_plain_header := hex.EncodeToString(plain_header)
 	expected_plain_header := "20000000bd3e4f2c6d8b14c9d677cb428a124dcae58c5530000f791f00000000000000008de8f457cffef50" +
-		"2d75ada232b2e68be61724c35f48432c7d0cac77d7b1dde505f2606591710b4f80000000000000080000000000000000000000000000" +
-		"0000000000000000000000000000000000000000000000000000080020000"
+		"2d75ada232b2e68be61724c35f48432c7d0cac77d7b1dde505f2606591710b4f800000000"
 	if hex_plain_header != expected_plain_header {
 		for i := 0; i < len(hex_plain_header); i++ {
 			if len(expected_plain_header) <= i {
@@ -106,6 +117,15 @@ func TestPoolWork(t *testing.T) {
 		}
 		t.Fail()
 	}
+	result := pw.Versions()
+	if len(result) != 4 {
+		t.Fail()
+	}
+	clone := pw.Clone()
+	clone.Version = 0
+	if clone.Version == pw.Version {
+		t.Fail()
+	}
 }
 
 func BenchmarkPoolWork_PlainHeader(b *testing.B) {
@@ -117,4 +137,45 @@ func BenchmarkPoolWork_PlainHeader(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		pw.PlainHeader()
 	}
+}
+
+func BenchmarkPoolWork_Versions(b *testing.B) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pw.Versions()
+	}
+}
+
+func BenchmarkPoolWork_Clone(b *testing.B) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		b.Fatal(err)
+	}
+	var clone *PoolWork
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		clone = pw.Clone()
+	}
+	b.StopTimer()
+	// method call to avoid unused variable error
+	_ = clone.String()
+}
+
+func BenchmarkPoolWork_Midstate(b *testing.B) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		b.Fatal(err)
+	}
+	header := pw.PlainHeader()
+	var ms []byte
+	for i := 0; i < b.N; i++ {
+		ms = utils.Midstate(header[:64], binary.BigEndian)
+	}
+	b.StopTimer()
+	// call to avoid unused variable error
+	_ = ms
 }

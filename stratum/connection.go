@@ -14,10 +14,10 @@ import (
 
 type Direction int
 
-var debugRPC bool
+var logRPC bool
 
 func init() {
-	flag.BoolVar(&debugRPC, "log-rpc", false, "log RPC traffic")
+	flag.BoolVar(&logRPC, "log-rpc", false, "log RPC traffic")
 }
 
 type Connection struct {
@@ -80,7 +80,7 @@ func (c *Connection) logRPC(prefix string, value interface{}) {
 
 func (c *Connection) Call(command protocol.IMethod) error {
 	command.SetId(c.NextId())
-	if debugRPC {
+	if logRPC {
 		c.logRPC("RPC out:", command)
 	}
 	return c.writer.Encode(command)
@@ -94,7 +94,7 @@ func (c *Connection) GetReply() (*protocol.Reply, error) {
 	if err := c.reader.Decode(&r); err != nil {
 		return nil, err
 	} else {
-		if debugRPC {
+		if logRPC {
 			c.logRPC("RPC in:", r)
 		}
 		return r, nil

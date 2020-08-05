@@ -8,9 +8,6 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
-var paddingBytes = []byte{0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 2, 0, 0}
-
 type PoolWork struct {
 	ExtraNonce1        uint64
 	ExtraNonce2        uint64
@@ -87,7 +84,7 @@ func (pw *PoolWork) MerkleRoot() []byte {
 }
 
 func (pw *PoolWork) PlainHeader() []byte {
-	headerBytes := make([]byte, 0, 128)
+	headerBytes := make([]byte, 0, 80)
 	headerBuf := bytes.NewBuffer(headerBytes)
 	_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
 	headerBuf.Write(pw.PrevHash)
@@ -95,6 +92,31 @@ func (pw *PoolWork) PlainHeader() []byte {
 	_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)
 	headerBuf.Write(pw.Nbits)
 	_ = binary.Write(headerBuf, binary.BigEndian, pw.Nonce)
-	headerBuf.Write(paddingBytes)
 	return headerBuf.Bytes()
+}
+
+func (pw *PoolWork) Versions() []uint32 {
+	// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
+	var maskBits [32]bool
+	tmpMask := pw.VersionRollingMask
+	for i := 0; i < 32; i++ {
+		maskBits[i] = (tmpMask & 1) == 1
+		tmpMask = tmpMask >> 1
+	}
+	vmasks := make([]uint32, 0, 4)
+	vmasks = append(vmasks, pw.Version)
+	for i := 0; i < 32; i++ {
+		if maskBits[i] {
+			vmasks = append(vmasks, pw.Version|1<<i)
+			if len(vmasks) == 4 {
+				break
+			}
+		}
+	}
+	return vmasks
+}
+
+func (pw *PoolWork) Clone() *PoolWork {
+	result := *pw
+	return &result
 }

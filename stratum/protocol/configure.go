@@ -10,7 +10,7 @@ func NewConfigure() *Configure {
 		MethodName: "mining.configure",
 		Params: []interface{}{
 			[]interface{}{"version-rolling"},
-			map[string]string{"version-rolling.mask": "ffffffff"},
+			map[string]interface{}{"version-rolling.mask": "ffffffff", "version-rolling.min-bit-count": 4},
 		},
 	}}
 }
