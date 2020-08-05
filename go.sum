@@ -6,12 +6,14 @@ github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452 h1:8GxaG7cAK2l
 github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452/go.mod h1:uY0hNevoNbdxl0Z07007Kx9jSyOPJ6cG3PHwk2gW5/k=
 github.com/epiclabs-io/ut v0.0.0-20190416122157-8da7fe4b4947 h1:5jyZq+mwwE90FnIyzAorlWF0Nrg8AB48KsDxofSAyBw=
 github.com/epiclabs-io/ut v0.0.0-20190416122157-8da7fe4b4947/go.mod h1:Sm6PW7b/nLOHEn3XxuUOXFYA4xFkLUnyAWUOcTGcRZ4=
+github.com/fernandosanchezjr/sha256-simd v0.1.2 h1:VHxb+5mXfzxkwJ//1jk7aPdWYYGxlRAFui0tDeki3fU=
+github.com/fernandosanchezjr/sha256-simd v0.1.2/go.mod h1:YuNxDaVGavuoESpXCBkMhr6g8YAmLo2WbKOrOEUoX0Q=
+github.com/fernandosanchezjr/sha256-simd v0.1.3 h1:zKYeht+gYmT/sGAGLbs0aDN72nfbLPeqyGiqH/3Sg9Y=
+github.com/fernandosanchezjr/sha256-simd v0.1.3/go.mod h1:YuNxDaVGavuoESpXCBkMhr6g8YAmLo2WbKOrOEUoX0Q=
 github.com/google/gousb v2.1.0+incompatible h1:ApzMDjF3FeO219QwWybJxYfFhXQzPLOEy0o+w9k5DNI=
 github.com/google/gousb v2.1.0+incompatible/go.mod h1:Tl4HdAs1ThE3gECkNwz+1MWicX6FXddhJEw7L8jRDiI=
 github.com/howeyc/crc16 v0.0.0-20171223171357-2b2a61e366a6 h1:IIVxLyDUYErC950b8kecjoqDet8P5S4lcVRUOM6rdkU=
 github.com/howeyc/crc16 v0.0.0-20171223171357-2b2a61e366a6/go.mod h1:JslaLRrzGsOKJgFEPBP65Whn+rdwDQSk0I0MCRFe2Zw=
-github.com/minio/sha256-simd v0.1.1 h1:5QHSlgo3nt5yKOJrC7W8w7X+NFl8cMPZm96iu8kKUJU=
-github.com/minio/sha256-simd v0.1.1/go.mod h1:B5e1o+1/KgNmWrSQK08Y6Z1Vb5pwIktudl0J58iy0KM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v2 v2.3.0 h1:clyUAQHOM3G0M3f5vQj7LuJrETvjVot3Z5el9nffUtU=
