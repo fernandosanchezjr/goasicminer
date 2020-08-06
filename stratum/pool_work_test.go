@@ -140,6 +140,7 @@ func BenchmarkPoolWork_PlainHeader(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		pw.PlainHeader()
 	}
+	b.StopTimer()
 }
 
 func BenchmarkPoolWork_Versions(b *testing.B) {
@@ -151,6 +152,7 @@ func BenchmarkPoolWork_Versions(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = pw.Versions()
 	}
+	b.StopTimer()
 }
 
 func BenchmarkPoolWork_Clone(b *testing.B) {
@@ -175,6 +177,7 @@ func BenchmarkPoolWork_Midstate(b *testing.B) {
 	}
 	header := pw.PlainHeader()
 	var ms []byte
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		ms = utils.Midstate(header[:64], binary.BigEndian)
 	}
