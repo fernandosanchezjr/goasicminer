@@ -97,21 +97,17 @@ func (pw *PoolWork) PlainHeader() []byte {
 
 func (pw *PoolWork) Versions() []uint32 {
 	// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
-	var maskBits [32]bool
 	tmpMask := pw.VersionRollingMask
-	for i := 0; i < 32; i++ {
-		maskBits[i] = (tmpMask & 1) == 1
-		tmpMask = tmpMask >> 1
-	}
 	vmasks := make([]uint32, 0, 4)
 	vmasks = append(vmasks, pw.Version)
 	for i := 0; i < 32; i++ {
-		if maskBits[i] {
+		if (tmpMask & 1) == 1 {
 			vmasks = append(vmasks, pw.Version|1<<i)
 			if len(vmasks) == 4 {
 				break
 			}
 		}
+		tmpMask = tmpMask >> 1
 	}
 	return vmasks
 }

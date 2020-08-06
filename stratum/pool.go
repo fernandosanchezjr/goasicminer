@@ -60,6 +60,7 @@ func (p *Pool) Start() {
 }
 
 func (p *Pool) Stop() {
+	log.Println("Stopping pool", p)
 	close(p.quit)
 	p.wg.Wait()
 }
@@ -266,6 +267,10 @@ func (p *Pool) handleSetVersionMask(reply *protocol.Reply) {
 	}
 }
 
+func (p *Pool) sendRecovery() {
+	_ = recover()
+}
+
 func (p *Pool) processWork() {
 	if p.status != Authorized {
 		return
@@ -282,5 +287,6 @@ func (p *Pool) processWork() {
 	if p.notify == nil {
 		return
 	}
+	defer p.sendRecovery()
 	p.workChan <- NewPoolWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
 }

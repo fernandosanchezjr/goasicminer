@@ -117,9 +117,12 @@ func TestPoolWork(t *testing.T) {
 		}
 		t.Fail()
 	}
-	result := pw.Versions()
-	if len(result) != 4 {
+	versions := pw.Versions()
+	if len(versions) != 4 {
 		t.Fail()
+	}
+	for _, v := range versions {
+		log.Printf("%x", v&pw.VersionRollingMask)
 	}
 	clone := pw.Clone()
 	clone.Version = 0
