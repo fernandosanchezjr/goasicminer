@@ -1,7 +1,6 @@
 package stratum
 
 import (
-	"encoding/binary"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
@@ -11,34 +10,38 @@ type PoolTask struct {
 	ExtraNonce2        uint64
 	NTime              uint32
 	Nonce              uint32
-	Midstates          [][]byte
+	Midstates          [][32]byte
 	Endstate           []byte
 	Versions           []uint32
 	Pool               *Pool
 }
 
-func NewPoolTask(pw *PoolWork, order binary.ByteOrder) *PoolTask {
+func NewPoolTask(pw *PoolWork, max int) *PoolTask {
 	pt := &PoolTask{
 		JobId:              pw.JobId,
 		VersionRollingMask: pw.VersionRollingMask,
 		ExtraNonce2:        pw.ExtraNonce2,
 		NTime:              pw.Ntime,
 		Nonce:              pw.Nonce,
-		Versions:           pw.Versions(),
+		Versions:           pw.Versions(max),
 		Pool:               pw.Pool,
 	}
-	plainHeader := pw.PlainHeader()
+	var plainHeader = pw.PlainHeader()
+	var initialChunk = plainHeader[:64]
 	pt.Endstate = plainHeader[64:]
-	pt.Midstates = make([][]byte, len(pt.Versions))
-	for pos, v := range pt.Versions {
-		if v == pw.Version {
-			pt.Midstates[pos] = utils.Midstate(plainHeader[:64], order)
+	var versionCount = len(pt.Versions)
+	var version uint32
+	pt.Midstates = make([][32]byte, versionCount)
+	for i := 0; i < versionCount; i++ {
+		version = pt.Versions[i]
+		if version == pw.Version {
+			pt.Midstates[i] = utils.Midstate(initialChunk)
 		} else {
-			plainHeader[0] = byte((v >> 24) & 0xff)
-			plainHeader[1] = byte((v >> 16) & 0xff)
-			plainHeader[2] = byte((v >> 8) & 0xff)
-			plainHeader[3] = byte(v & 0xff)
-			pt.Midstates[pos] = utils.Midstate(plainHeader[:64], order)
+			plainHeader[0] = byte((version >> 24) & 0xff)
+			plainHeader[1] = byte((version >> 16) & 0xff)
+			plainHeader[2] = byte((version >> 8) & 0xff)
+			plainHeader[3] = byte(version & 0xff)
+			pt.Midstates[i] = utils.Midstate(initialChunk)
 		}
 	}
 	return pt

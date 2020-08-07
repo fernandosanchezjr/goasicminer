@@ -1,7 +1,6 @@
 package stratum
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
@@ -117,7 +116,11 @@ func TestPoolWork(t *testing.T) {
 		}
 		t.Fail()
 	}
-	versions := pw.Versions()
+	doubleHash := utils.DoubleHash(plain_header)
+	if hex.EncodeToString(doubleHash[:]) != "93ce397668878d409b5a3d3aaa9ad6b58442449c3c407969750d244137ce4abd" {
+		t.Fatal("invalid double hash")
+	}
+	versions := pw.Versions(4)
 	if len(versions) != 4 {
 		t.Fail()
 	}
@@ -150,7 +153,7 @@ func BenchmarkPoolWork_Versions(b *testing.B) {
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_ = pw.Versions()
+		_ = pw.Versions(4)
 	}
 	b.StopTimer()
 }
@@ -176,12 +179,28 @@ func BenchmarkPoolWork_Midstate(b *testing.B) {
 		b.Fatal(err)
 	}
 	header := pw.PlainHeader()
-	var ms []byte
+	var ms [32]byte
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		ms = utils.Midstate(header[:64], binary.BigEndian)
+		ms = utils.Midstate(header[:64])
 	}
 	b.StopTimer()
 	// call to avoid unused variable error
 	_ = ms
+}
+
+func BenchmarkPoolWork_DoubleHash(b *testing.B) {
+	pw, err := unmarshalTestWork()
+	if err != nil {
+		b.Fatal(err)
+	}
+	header := pw.PlainHeader()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		ms := utils.DoubleHash(header)
+		_ = ms
+	}
+	b.StopTimer()
+	// call to avoid unused variable error
+	//log.Println(hex.EncodeToString(ms[:]))
 }

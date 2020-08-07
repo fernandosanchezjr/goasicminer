@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
+	"math/bits"
 )
 
 type PoolWork struct {
@@ -26,6 +27,8 @@ type PoolWork struct {
 	CleanJobs          bool
 	Nonce              uint32
 	Pool               *Pool
+	plainHeader        []byte
+	versions           []uint32
 }
 
 type PoolWorkChan chan *PoolWork
@@ -84,35 +87,57 @@ func (pw *PoolWork) MerkleRoot() []byte {
 }
 
 func (pw *PoolWork) PlainHeader() []byte {
-	headerBytes := make([]byte, 0, 80)
-	headerBuf := bytes.NewBuffer(headerBytes)
-	_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
-	headerBuf.Write(pw.PrevHash)
-	headerBuf.Write(pw.MerkleRoot())
-	_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)
-	headerBuf.Write(pw.Nbits)
-	_ = binary.Write(headerBuf, binary.BigEndian, pw.Nonce)
-	return headerBuf.Bytes()
+	if len(pw.plainHeader) == 0 {
+		headerBuf := bytes.NewBuffer(make([]byte, 0, 80))
+		_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
+		headerBuf.Write(pw.PrevHash)
+		headerBuf.Write(pw.MerkleRoot())
+		_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)
+		headerBuf.Write(pw.Nbits)
+		_ = binary.Write(headerBuf, binary.BigEndian, pw.Nonce)
+		pw.plainHeader = headerBuf.Bytes()
+	}
+	return pw.plainHeader
 }
 
-func (pw *PoolWork) Versions() []uint32 {
-	// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
-	tmpMask := pw.VersionRollingMask
-	vmasks := make([]uint32, 0, 4)
-	vmasks = append(vmasks, pw.Version)
-	for i := 0; i < 32; i++ {
-		if (tmpMask & 1) == 1 {
-			vmasks = append(vmasks, pw.Version|1<<i)
-			if len(vmasks) == 4 {
-				break
-			}
+func (pw *PoolWork) Versions(maxCount int) []uint32 {
+	if len(pw.versions) == 0 {
+		// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
+		tmpMask := pw.VersionRollingMask
+		maxOnes := bits.OnesCount32(tmpMask)
+		if maxCount > maxOnes {
+			maxCount = maxOnes
 		}
-		tmpMask = tmpMask >> 1
+		pw.versions = make([]uint32, 0, maxCount)
+		pw.versions = append(pw.versions, pw.Version)
+		for i := 0; i < 32; i++ {
+			if (tmpMask & 1) == 1 {
+				pw.versions = append(pw.versions, pw.Version|1<<i)
+				if len(pw.versions) == maxCount {
+					break
+				}
+			}
+			tmpMask = tmpMask >> 1
+		}
 	}
-	return vmasks
+	return pw.versions
 }
 
 func (pw *PoolWork) Clone() *PoolWork {
 	result := *pw
 	return &result
+}
+
+func (pw *PoolWork) Reset() {
+	pw.plainHeader = nil
+	pw.versions = nil
+}
+
+func (pw *PoolWork) ExtraNonce2Mask() uint64 {
+	return 0xffffffffffffffff >> uint64(64-(pw.ExtraNonce2Len*8))
+}
+
+func (pw *PoolWork) SetExtraNonce2(extraNonce uint64) {
+	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
+	pw.Reset()
 }

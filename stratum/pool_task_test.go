@@ -1,7 +1,6 @@
 package stratum
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"testing"
 )
@@ -11,7 +10,7 @@ func TestNewPoolTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt := NewPoolTask(pw, binary.BigEndian)
+	pt := NewPoolTask(pw, 4)
 	if len(pt.Midstates) != 4 {
 		t.Fail()
 	}
@@ -31,7 +30,7 @@ func BenchmarkNewPoolTask(b *testing.B) {
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewPoolTask(pw, binary.BigEndian)
+		_ = NewPoolTask(pw, 4)
 	}
 	b.StopTimer()
 }
