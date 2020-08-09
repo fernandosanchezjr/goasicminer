@@ -11,7 +11,7 @@ type Governor struct {
 	Config   *config.Config
 	Pools    []*stratum.Pool
 	PoolWork stratum.PoolWorkChan
-	quit     chan struct{}
+	workQuit chan struct{}
 	wg       sync.WaitGroup
 }
 
@@ -20,7 +20,7 @@ func NewGovernor(cfg *config.Config) *Governor {
 	if poolCount == 0 {
 		poolCount = 1
 	}
-	return &Governor{Config: cfg, PoolWork: make(stratum.PoolWorkChan, poolCount), quit: make(chan struct{})}
+	return &Governor{Config: cfg, PoolWork: make(stratum.PoolWorkChan, poolCount), workQuit: make(chan struct{})}
 }
 
 func (g *Governor) Start() {
@@ -34,7 +34,7 @@ func (g *Governor) Start() {
 }
 
 func (g *Governor) Stop() {
-	close(g.quit)
+	close(g.workQuit)
 	g.wg.Wait()
 	close(g.PoolWork)
 	for _, pool := range g.Pools {
@@ -46,7 +46,7 @@ func (g *Governor) workReceiver() {
 	var work *stratum.PoolWork
 	for {
 		select {
-		case <-g.quit:
+		case <-g.workQuit:
 			g.wg.Done()
 			return
 		case work = <-g.PoolWork:

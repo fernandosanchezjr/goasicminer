@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
+	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,22 +19,27 @@ const (
 	//R606NumCores = 144
 	//R606TaskLen = 54
 	//R606RXLen = 7
-	R606MaxJobId      = 0x7f
-	R606SendQueueSize = 4
+	R606MaxJobId         = 0x7f
+	R606SendQueueSize    = 4
+	R606NtimeRollSeconds = 60
+	R606MidstateCount    = 4
 )
 
 type R606Controller struct {
 	base.IController
 	base.ITaskDispatcher
-	lastReset    time.Time
-	frequency    float64
-	chipCount    int
-	tasks        []*protocol.Task
-	quit         chan struct{}
-	waiter       sync.WaitGroup
-	sendQueue    base.TaskChan
-	receiveQueue base.TaskChan
-	work         base.WorkChan
+	lastReset       time.Time
+	frequency       float64
+	chipCount       int
+	tasks           []*protocol.Task
+	quit            chan struct{}
+	waiter          sync.WaitGroup
+	sendQueue       base.TaskChan
+	receiveQueue    base.TaskChan
+	currentPoolWork *stratum.PoolWork
+	currentPoolTask *stratum.PoolTask
+	nTimeOffset     uint32
+	taskMtx         sync.Mutex
 }
 
 func NewR606Controller(controller base.IController) *R606Controller {
@@ -49,9 +56,6 @@ func (rc *R606Controller) Close() {
 	}
 	if rc.sendQueue != nil {
 		close(rc.sendQueue)
-	}
-	if rc.work != nil {
-		close(rc.work)
 	}
 	if waitForReader {
 		rc.waiter.Wait()
@@ -225,45 +229,49 @@ func (rc *R606Controller) SetFrequency(frequency float64) error {
 	return nil
 }
 
-func (rc *R606Controller) setupSampleWork() {
-	midstates := GetWiresharkMidstates()
-	rc.work = make(base.WorkChan, len(midstates))
-	for _, ms := range midstates {
-		rc.work <- base.NewWork(0, ms)
-	}
-}
-
 func (rc *R606Controller) InitializeTasks() error {
-	//rc.setupSampleWork()
 	rc.sendQueue = make(base.TaskChan, R606SendQueueSize)
 	rc.receiveQueue = make(base.TaskChan, R606MaxJobId)
 	rc.waiter.Add(1)
-	go rc.hashResponseLoop()
+	go rc.controllerLoop()
 	rc.tasks = make([]*protocol.Task, R606MaxJobId)
 	var j byte
 	for j = 0; j < R606MaxJobId; j++ {
 		rc.tasks[j] = protocol.NewTask(j)
 	}
-	go func() {
-		for pos, task := range rc.tasks {
-			if pos < R606SendQueueSize {
-				rc.OnSent(task)
-			} else {
-				rc.OnReady(task)
-			}
-		}
-	}()
-	rc.ITaskDispatcher.Start()
+	for _, task := range rc.tasks {
+		rc.OnStart(task)
+	}
+	//go func() {
+	//	for pos, task := range rc.tasks {
+	//		if pos < R606SendQueueSize {
+	//			rc.OnSent(task)
+	//		} else {
+	//			rc.OnReady(task)
+	//		}
+	//	}
+	//}()
 	return nil
 }
 
 func (rc *R606Controller) handleStart(task base.ITask, dispatcher base.ITaskDispatcher) {
 	defer dispatcher.OnError(task)
-	if next, ok := <-rc.work; ok {
-		task.Update(next.Midstate)
-		rc.work <- next
+	rc.taskMtx.Lock()
+	defer rc.taskMtx.Unlock()
+	if rc.nTimeOffset == R606NtimeRollSeconds {
+		rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
+		rc.currentPoolTask = stratum.NewPoolTask(rc.currentPoolWork, R606MidstateCount, true)
+		rc.nTimeOffset = 0
 	}
+	rc.currentPoolTask.IncreaseNTime(rc.nTimeOffset)
+	atomic.AddUint32(&rc.nTimeOffset, 1)
+	task.Update(rc.currentPoolTask)
 	dispatcher.OnReady(task)
+	//if next, ok := <-rc.work; ok {
+	//	//task.Update([]byte{})
+	//	rc.work <- next
+	//}
+	//dispatcher.OnReady(task)
 }
 
 func (rc *R606Controller) handleReady(task base.ITask, dispatcher base.ITaskDispatcher) {
@@ -288,19 +296,38 @@ func (rc *R606Controller) handleReceive(task base.ITask, dispatcher base.ITaskDi
 	dispatcher.OnStart(task)
 }
 
-func (rc *R606Controller) hashResponseLoop() {
+func (rc *R606Controller) setupWork(work *stratum.PoolWork) {
+	rc.taskMtx.Lock()
+	defer rc.taskMtx.Unlock()
+	rc.nTimeOffset = 0
+	started := rc.currentPoolWork != nil
+	rc.currentPoolWork = work
+	rc.currentPoolTask = stratum.NewPoolTask(rc.currentPoolWork, R606MidstateCount, true)
+	if !started {
+		rc.ITaskDispatcher.Start()
+	}
+}
+
+func (rc *R606Controller) controllerLoop() {
 	var buf bytes.Buffer
-	var r *protocol.TaskResponse
-	var task, next base.ITask
-	var ok bool
+	var work *stratum.PoolWork
+	var next base.ITask
+	workChan := rc.WorkChannel()
 	rb := protocol.NewResponseBlock()
 	readTicker := time.NewTicker(25 * time.Millisecond)
+	writeTicker := time.NewTicker(100 * time.Millisecond)
 	for {
 		select {
 		case <-rc.quit:
 			readTicker.Stop()
 			rc.waiter.Done()
 			return
+		case <-writeTicker.C:
+			select {
+			case next = <-rc.sendQueue:
+				rc.OnSent(next)
+			default:
+			}
 		case <-readTicker.C:
 			buf.Reset()
 			if err := rc.Read(&buf); err != nil {
@@ -311,14 +338,16 @@ func (rc *R606Controller) hashResponseLoop() {
 				log.Println("Error decoding response block:", err)
 				continue
 			}
-			for i := 0; i < rb.Count; i++ {
-				r = rb.Responses[i]
-				if next, ok = <-rc.sendQueue; ok {
-					rc.OnSent(next)
-				}
-				task = rc.tasks[r.JobId]
-				rc.OnReceived(task)
+			if rb.Count > 0 {
+				log.Println("Found one!")
 			}
+			select {
+			case next = <-rc.receiveQueue:
+				rc.OnReceived(next)
+			default:
+			}
+		case work = <-workChan:
+			rc.setupWork(work)
 		}
 	}
 }

@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
-	"github.com/fernandosanchezjr/goasicminer/utils"
+	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/howeyc/crc16"
 )
 
@@ -13,8 +13,8 @@ type Task struct {
 }
 
 func NewTask(jobId byte) *Task {
-	maxLen := byte(4 + 48 + (32 * 3) + 2)
-	t := &Task{ITask: base.NewTask(int(jobId)), jobId: jobId, data: make([]byte, maxLen)}
+	maxLen := byte(20 + (32 * 4) + 2)
+	t := &Task{ITask: base.NewTask(int(jobId), 4), jobId: jobId, data: make([]byte, maxLen)}
 	t.data[0] = 0x21
 	t.data[1] = 0x00
 	t.data[2] = t.jobId & 0x7f
@@ -32,15 +32,15 @@ func (t *Task) MarshalBinary() ([]byte, error) {
 	return t.data[:t.data[1]], nil
 }
 
-func (t *Task) Reverse(dataLen byte, data []byte) {
-	for i, j := 4, int(dataLen-3); i < j; i, j = i+1, j-1 {
-		data[i], data[j] = data[j], data[i]
+func (t *Task) Update(task *stratum.PoolTask) {
+	t.data[3] = byte(len(task.Versions))
+	t.data[1] = byte(20 + (32 * t.data[3]) + 2)
+	copy(t.data[8:], task.Endstate[4:])
+	start := 20
+	for _, midstate := range task.Midstates {
+		copy(t.data[start:], midstate[:])
+		start += 32
 	}
-}
-
-func (t *Task) Update(midstate ...utils.MidstateBytes) {
-	t.data[1] = byte(4 + 48 + (32 * (len(midstate) - 1)) + 2)
-	midstate[0].Reverse()
-	copy(t.data[4:], midstate[0])
 	t.crc(t.data[1], t.data)
+	t.ITask.Update(task)
 }

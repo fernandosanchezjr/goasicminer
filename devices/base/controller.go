@@ -3,10 +3,18 @@ package base
 import (
 	"bytes"
 	"encoding/hex"
+	"flag"
 	"fmt"
+	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/google/gousb"
 	"log"
 )
+
+var logDeviceTraffic bool
+
+func init() {
+	flag.BoolVar(&logDeviceTraffic, "log-device-traffic", false, "log device traffic")
+}
 
 type IController interface {
 	String() string
@@ -21,6 +29,8 @@ type IController interface {
 	Reset() error
 	Write(data []byte) error
 	Read(buf *bytes.Buffer) error
+	UpdateWork(work *stratum.PoolWork)
+	WorkChannel() stratum.PoolWorkChan
 }
 
 type Controller struct {
@@ -34,11 +44,12 @@ type Controller struct {
 	outEndpoint       *gousb.OutEndpoint
 	readBuffer        []byte
 	serialNumber      string
+	workChan          stratum.PoolWorkChan
 }
 
 func NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) *Controller {
 	return &Controller{Device: device, driver: driver, done: nil, inEndpointNumber: inEndpoint,
-		outEndpointNumber: outEndpoint}
+		outEndpointNumber: outEndpoint, workChan: make(stratum.PoolWorkChan, 1)}
 }
 
 func (c *Controller) String() string {
@@ -117,7 +128,9 @@ func (c *Controller) Write(data []byte) error {
 	} else if written != countLen {
 		return fmt.Errorf("could not write %d bytes", countLen)
 	}
-	log.Println("Wrote:", hex.EncodeToString(data))
+	if logDeviceTraffic {
+		log.Println("Wrote:", hex.EncodeToString(data))
+	}
 	return nil
 }
 
@@ -129,10 +142,20 @@ func (c *Controller) Read(buf *bytes.Buffer) error {
 		} else {
 			buf.Write(c.readBuffer[:read])
 			if read < c.inEndpoint.Desc.MaxPacketSize {
-				log.Println("Read:", hex.EncodeToString(buf.Bytes()))
+				if logDeviceTraffic {
+					log.Println("Read:", hex.EncodeToString(buf.Bytes()))
+				}
 				break
 			}
 		}
 	}
 	return nil
+}
+
+func (c *Controller) UpdateWork(work *stratum.PoolWork) {
+	c.workChan <- work
+}
+
+func (c *Controller) WorkChannel() stratum.PoolWorkChan {
+	return c.workChan
 }

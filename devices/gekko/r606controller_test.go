@@ -2,11 +2,16 @@ package gekko
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
+	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"testing"
 	"time"
 )
 
 func TestR606Controller_Initialize(t *testing.T) {
+	pw, err := stratum.UnmarshalTestWork()
+	if err != nil {
+		t.Fatal(err)
+	}
 	context := base.NewContext()
 	defer context.Close()
 	gekko := NewGekkoCatalog()
@@ -22,6 +27,7 @@ func TestR606Controller_Initialize(t *testing.T) {
 		if err := dev.Reset(); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(10 * time.Second)
+		dev.UpdateWork(pw)
+		time.Sleep(20 * time.Minute)
 	}
 }

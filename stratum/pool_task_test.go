@@ -6,11 +6,11 @@ import (
 )
 
 func TestNewPoolTask(t *testing.T) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt := NewPoolTask(pw, 4)
+	pt := NewPoolTask(pw, 4, true)
 	if len(pt.Midstates) != 4 {
 		t.Fail()
 	}
@@ -24,13 +24,13 @@ func TestNewPoolTask(t *testing.T) {
 }
 
 func BenchmarkNewPoolTask(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewPoolTask(pw, 4)
+		_ = NewPoolTask(pw, 4, true)
 	}
 	b.StopTimer()
 }

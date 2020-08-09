@@ -2,69 +2,13 @@ package stratum
 
 import (
 	"encoding/hex"
-	"encoding/json"
-	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"io/ioutil"
 	"log"
 	"testing"
 )
 
-func unmarshalFile(fileName string, value interface{}) error {
-	if data, err := ioutil.ReadFile(fileName); err != nil {
-		return err
-	} else {
-		if err := json.Unmarshal(data, value); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func unmarshalTestWork() (*PoolWork, error) {
-	var reply *protocol.Reply
-	var sr *protocol.SubscribeResponse
-	var sd *protocol.SetDifficulty
-	var n *protocol.Notify
-	var svm *protocol.SetVersionMask
-	cf := &protocol.ConfigureResponse{}
-	if err := unmarshalFile("subscribe_test.json", &reply); err != nil {
-		return nil, err
-	} else {
-		if sr, err = protocol.NewSubscribeResponse(reply); err != nil {
-			return nil, err
-		}
-	}
-	if err := unmarshalFile("set_difficulty_test.json", &reply); err != nil {
-		return nil, err
-	} else {
-		if sd, err = protocol.NewSetDifficulty(reply); err != nil {
-			return nil, err
-		}
-	}
-	if err := unmarshalFile("notify_test.json", &reply); err != nil {
-		return nil, err
-	} else {
-		if n, err = protocol.NewNotify(reply); err != nil {
-			return nil, err
-		}
-	}
-	if err := unmarshalFile("set_version_mask_test.json", &reply); err != nil {
-		return nil, err
-	} else {
-		if svm, err = protocol.NewSetVersionMask(reply); err != nil {
-			return nil, err
-		} else {
-			cf.VersionRolling = true
-			cf.VersionRollingMask = svm.VersionRollingMask
-		}
-	}
-	pw := NewPoolWork(sr, cf, sd, n, nil)
-	return pw, nil
-}
-
 func TestPoolWork(t *testing.T) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +79,7 @@ func TestPoolWork(t *testing.T) {
 }
 
 func BenchmarkPoolWork_PlainHeader(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -147,7 +91,7 @@ func BenchmarkPoolWork_PlainHeader(b *testing.B) {
 }
 
 func BenchmarkPoolWork_Versions(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -159,7 +103,7 @@ func BenchmarkPoolWork_Versions(b *testing.B) {
 }
 
 func BenchmarkPoolWork_Clone(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -174,7 +118,7 @@ func BenchmarkPoolWork_Clone(b *testing.B) {
 }
 
 func BenchmarkPoolWork_Midstate(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -190,7 +134,7 @@ func BenchmarkPoolWork_Midstate(b *testing.B) {
 }
 
 func BenchmarkPoolWork_DoubleHash(b *testing.B) {
-	pw, err := unmarshalTestWork()
+	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
