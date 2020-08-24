@@ -27,7 +27,7 @@ var notifyExample = "{\"id\":0,\"method\":\"mining.notify\",\"params\":[\"9b289d
 var setVersionMaskTest = "{\"id\":0,\"method\":\"mining.set_version_mask\",\"params\":[\"1fffe000\"],\"result\":null," +
 	"\"error\":null}"
 
-func UnmarshalTestWork() (*PoolWork, error) {
+func UnmarshalTestWork() (*Work, error) {
 	var reply *protocol.Reply
 	var sr *protocol.SubscribeResponse
 	var sd *protocol.SetDifficulty
@@ -65,6 +65,6 @@ func UnmarshalTestWork() (*PoolWork, error) {
 			cf.VersionRollingMask = svm.VersionRollingMask
 		}
 	}
-	pw := NewPoolWork(sr, cf, sd, n, nil)
+	pw := NewWork(sr, cf, sd, n, nil)
 	return pw, nil
 }

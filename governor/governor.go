@@ -43,7 +43,7 @@ func (g *Governor) Stop() {
 }
 
 func (g *Governor) workReceiver() {
-	var work *stratum.PoolWork
+	var work *stratum.Work
 	for {
 		select {
 		case <-g.workQuit:

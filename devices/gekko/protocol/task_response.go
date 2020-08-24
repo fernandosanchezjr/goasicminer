@@ -1,8 +1,9 @@
 package protocol
 
 type TaskResponse struct {
-	Nonce uint32
-	JobId byte
+	Nonce    uint32
+	Midstate byte
+	JobId    byte
 }
 
 func NewTaskResponse() *TaskResponse {
@@ -11,6 +12,7 @@ func NewTaskResponse() *TaskResponse {
 
 func (tr *TaskResponse) UnmarshalBinary(data []byte) error {
 	tr.Nonce = uint32(data[3]) | uint32(data[2])<<8 | uint32(data[1])<<16 | uint32(data[0])<<24
+	tr.Midstate = data[4]
 	tr.JobId = data[5]
 	return nil
 }

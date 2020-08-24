@@ -5,14 +5,14 @@ import (
 	"math"
 )
 
-var setFrequencyMessage = []byte{0x58, 0x09, 0x00, 0x0C, 0x00, 0x50, 0x02, 0x41, 0x00}
+var setFrequencyMessage = []byte{0x48, 0x09, 0x00, 0x0C, 0x00, 0x50, 0x02, 0x41, 0x00}
 
 type SetFrequency struct {
 	data      []byte
 	Frequency float64
 }
 
-func NewSetFrequency(minFrequency, maxFrequency, frequency float64) *SetFrequency {
+func NewSetFrequency(minFrequency, maxFrequency, frequency float64, asicId byte) *SetFrequency {
 	sf := &SetFrequency{data: append([]byte{}, setFrequencyMessage...)}
 	if frequency < minFrequency {
 		frequency = minFrequency
@@ -21,6 +21,7 @@ func NewSetFrequency(minFrequency, maxFrequency, frequency float64) *SetFrequenc
 	}
 	frequency = math.Ceil(100.0*frequency/625.0) * 6.25
 	sf.Frequency = frequency
+	sf.data[2] = asicId
 	if frequency < 400 {
 		sf.data[5] = byte(frequency*8) / 25
 		sf.data[7] = 0x41

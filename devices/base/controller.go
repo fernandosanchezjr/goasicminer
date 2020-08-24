@@ -2,12 +2,14 @@ package base
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/google/gousb"
 	"log"
+	"time"
 )
 
 var logDeviceTraffic bool
@@ -29,7 +31,8 @@ type IController interface {
 	Reset() error
 	Write(data []byte) error
 	Read(buf *bytes.Buffer) error
-	UpdateWork(work *stratum.PoolWork)
+	ReadTimeout(buf *bytes.Buffer, timeout time.Duration) error
+	UpdateWork(work *stratum.Work)
 	WorkChannel() stratum.PoolWorkChan
 }
 
@@ -123,13 +126,13 @@ func (c *Controller) Reset() error {
 func (c *Controller) Write(data []byte) error {
 	outEndpoint := c.OutEndpoint()
 	countLen := len(data)
+	if logDeviceTraffic {
+		log.Println("Writing:", hex.EncodeToString(data))
+	}
 	if written, err := outEndpoint.Write(data); err != nil {
 		return err
 	} else if written != countLen {
 		return fmt.Errorf("could not write %d bytes", countLen)
-	}
-	if logDeviceTraffic {
-		log.Println("Wrote:", hex.EncodeToString(data))
 	}
 	return nil
 }
@@ -152,7 +155,30 @@ func (c *Controller) Read(buf *bytes.Buffer) error {
 	return nil
 }
 
-func (c *Controller) UpdateWork(work *stratum.PoolWork) {
+func (c *Controller) ReadTimeout(buf *bytes.Buffer, timeout time.Duration) error {
+	inEndpoint := c.InEndpoint()
+	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+	defer cancel()
+	for {
+		if read, err := inEndpoint.ReadContext(ctx, c.readBuffer); err != nil {
+			if err == gousb.ErrorTimeout || err == gousb.TransferCancelled || err == gousb.ErrorInterrupted {
+				return nil
+			}
+			return err
+		} else {
+			buf.Write(c.readBuffer[:read])
+			if read < c.inEndpoint.Desc.MaxPacketSize {
+				if logDeviceTraffic {
+					log.Println("Read:", hex.EncodeToString(buf.Bytes()))
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func (c *Controller) UpdateWork(work *stratum.Work) {
 	c.workChan <- work
 }
 

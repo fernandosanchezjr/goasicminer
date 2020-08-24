@@ -4,7 +4,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
-type PoolTask struct {
+type Task struct {
 	JobId              string
 	VersionRollingMask uint32
 	ExtraNonce2        uint64
@@ -17,8 +17,8 @@ type PoolTask struct {
 	reversed           bool
 }
 
-func NewPoolTask(pw *PoolWork, maxMidstates int, reversed bool) *PoolTask {
-	pt := &PoolTask{
+func NewTask(pw *Work, maxMidstates int, reversed bool) *Task {
+	pt := &Task{
 		JobId:              pw.JobId,
 		VersionRollingMask: pw.VersionRollingMask,
 		ExtraNonce2:        pw.ExtraNonce2,
@@ -30,7 +30,7 @@ func NewPoolTask(pw *PoolWork, maxMidstates int, reversed bool) *PoolTask {
 	}
 	var plainHeader = pw.PlainHeader()
 	var initialChunk = plainHeader[:64]
-	pt.Endstate = plainHeader[64:]
+	pt.Endstate = append([]byte{}, plainHeader[64:]...)
 	if reversed {
 		for j, k := 0, len(pt.Endstate)-1; j < k; j, k = j+1, k-1 {
 			pt.Endstate[j], pt.Endstate[k] = pt.Endstate[k], pt.Endstate[j]
@@ -59,7 +59,7 @@ func NewPoolTask(pw *PoolWork, maxMidstates int, reversed bool) *PoolTask {
 	return pt
 }
 
-func (pt *PoolTask) IncreaseNTime(delta uint32) {
+func (pt *Task) IncreaseNTime(delta uint32) {
 	if delta == 0 {
 		return
 	}

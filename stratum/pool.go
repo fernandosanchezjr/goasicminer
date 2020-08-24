@@ -288,5 +288,5 @@ func (p *Pool) processWork() {
 		return
 	}
 	defer p.sendRecovery()
-	p.workChan <- NewPoolWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
+	p.workChan <- NewWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
 }

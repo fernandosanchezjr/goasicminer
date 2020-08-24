@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPoolWork(t *testing.T) {
+func TestWork(t *testing.T) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestPoolWork(t *testing.T) {
 	}
 }
 
-func BenchmarkPoolWork_PlainHeader(b *testing.B) {
+func BenchmarkWork_PlainHeader(b *testing.B) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
@@ -90,7 +90,7 @@ func BenchmarkPoolWork_PlainHeader(b *testing.B) {
 	b.StopTimer()
 }
 
-func BenchmarkPoolWork_Versions(b *testing.B) {
+func BenchmarkWork_Versions(b *testing.B) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
@@ -102,12 +102,12 @@ func BenchmarkPoolWork_Versions(b *testing.B) {
 	b.StopTimer()
 }
 
-func BenchmarkPoolWork_Clone(b *testing.B) {
+func BenchmarkWork_Clone(b *testing.B) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
 	}
-	var clone *PoolWork
+	var clone *Work
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		clone = pw.Clone()
@@ -117,7 +117,7 @@ func BenchmarkPoolWork_Clone(b *testing.B) {
 	_ = clone.String()
 }
 
-func BenchmarkPoolWork_Midstate(b *testing.B) {
+func BenchmarkWork_Midstate(b *testing.B) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)
@@ -133,7 +133,7 @@ func BenchmarkPoolWork_Midstate(b *testing.B) {
 	_ = ms
 }
 
-func BenchmarkPoolWork_DoubleHash(b *testing.B) {
+func BenchmarkWork_DoubleHash(b *testing.B) {
 	pw, err := UnmarshalTestWork()
 	if err != nil {
 		b.Fatal(err)

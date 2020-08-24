@@ -9,7 +9,7 @@ import (
 	"math/bits"
 )
 
-type PoolWork struct {
+type Work struct {
 	ExtraNonce1        uint64
 	ExtraNonce2        uint64
 	ExtraNonce2Len     int
@@ -31,16 +31,16 @@ type PoolWork struct {
 	versions           []uint32
 }
 
-type PoolWorkChan chan *PoolWork
+type PoolWorkChan chan *Work
 
-func NewPoolWork(
+func NewWork(
 	subscription *protocol.SubscribeResponse,
 	configuration *protocol.ConfigureResponse,
 	setDifficulty *protocol.SetDifficulty,
 	notify *protocol.Notify,
 	pool *Pool,
-) *PoolWork {
-	return &PoolWork{
+) *Work {
+	return &Work{
 		ExtraNonce1:        subscription.ExtraNonce1,
 		ExtraNonce2Len:     subscription.ExtraNonce2Len,
 		VersionRolling:     configuration.VersionRolling,
@@ -59,11 +59,11 @@ func NewPoolWork(
 	}
 }
 
-func (pw *PoolWork) String() string {
+func (pw *Work) String() string {
 	return fmt.Sprint("Work ", pw.JobId, " difficulty ", pw.Difficulty, " from ", pw.Pool)
 }
 
-func (pw *PoolWork) Coinbase() []byte {
+func (pw *Work) Coinbase() []byte {
 	coinbaseLen := len(pw.CoinBase1) + 8 + pw.ExtraNonce2Len + len(pw.CoinBase2)
 	coinbaseBytes := make([]byte, 0, coinbaseLen)
 	coinbaseBuf := bytes.NewBuffer(coinbaseBytes)
@@ -74,7 +74,7 @@ func (pw *PoolWork) Coinbase() []byte {
 	return coinbaseBuf.Bytes()
 }
 
-func (pw *PoolWork) MerkleRoot() []byte {
+func (pw *Work) MerkleRoot() []byte {
 	coinbase := utils.DoubleHash(pw.Coinbase())
 	plainText := make([]byte, 64)
 	merkle_root := coinbase
@@ -86,7 +86,7 @@ func (pw *PoolWork) MerkleRoot() []byte {
 	return merkle_root[:]
 }
 
-func (pw *PoolWork) PlainHeader() []byte {
+func (pw *Work) PlainHeader() []byte {
 	if len(pw.plainHeader) == 0 {
 		headerBuf := bytes.NewBuffer(make([]byte, 0, 80))
 		_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
@@ -100,7 +100,7 @@ func (pw *PoolWork) PlainHeader() []byte {
 	return pw.plainHeader
 }
 
-func (pw *PoolWork) Versions(maxCount int) []uint32 {
+func (pw *Work) Versions(maxCount int) []uint32 {
 	if len(pw.versions) == 0 {
 		// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
 		tmpMask := pw.VersionRollingMask
@@ -123,21 +123,21 @@ func (pw *PoolWork) Versions(maxCount int) []uint32 {
 	return pw.versions
 }
 
-func (pw *PoolWork) Clone() *PoolWork {
+func (pw *Work) Clone() *Work {
 	result := *pw
 	return &result
 }
 
-func (pw *PoolWork) Reset() {
+func (pw *Work) Reset() {
 	pw.plainHeader = nil
 	pw.versions = nil
 }
 
-func (pw *PoolWork) ExtraNonce2Mask() uint64 {
+func (pw *Work) ExtraNonce2Mask() uint64 {
 	return 0xffffffffffffffff >> uint64(64-(pw.ExtraNonce2Len*8))
 }
 
-func (pw *PoolWork) SetExtraNonce2(extraNonce uint64) {
+func (pw *Work) SetExtraNonce2(extraNonce uint64) {
 	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
 	pw.Reset()
 }

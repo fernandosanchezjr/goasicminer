@@ -6,6 +6,10 @@ import (
 	"github.com/howeyc/crc16"
 )
 
+var busyWork = []byte{0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
 type Task struct {
 	base.ITask
 	jobId byte
@@ -32,7 +36,7 @@ func (t *Task) MarshalBinary() ([]byte, error) {
 	return t.data[:t.data[1]], nil
 }
 
-func (t *Task) Update(task *stratum.PoolTask) {
+func (t *Task) Update(task *stratum.Task) {
 	t.data[3] = byte(len(task.Versions))
 	t.data[1] = byte(20 + (32 * t.data[3]) + 2)
 	copy(t.data[8:], task.Endstate[4:])
@@ -43,4 +47,10 @@ func (t *Task) Update(task *stratum.PoolTask) {
 	}
 	t.crc(t.data[1], t.data)
 	t.ITask.Update(task)
+}
+
+func (t *Task) SetBusyWork() {
+	copy(t.data[4:], busyWork)
+	t.data[1] = byte(4 + len(busyWork))
+	t.crc(t.data[1], t.data)
 }
