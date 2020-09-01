@@ -12,7 +12,7 @@ func (s MessageSeparator) Search(message []byte) (int, int) {
 	for i := 0; i < messageLen; i++ {
 		if message[i] == s[0] {
 			nextPos = i + 1
-			if nextPos < messageLen && (message[nextPos]&s[1]) == s[1] {
+			if nextPos < messageLen && message[nextPos] == s[1] {
 				return i, nextPos
 			}
 		}

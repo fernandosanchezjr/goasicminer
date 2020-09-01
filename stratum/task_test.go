@@ -12,14 +12,14 @@ func TestNewTask(t *testing.T) {
 	}
 	pt := NewTask(pw, 4, true)
 	if len(pt.Midstates) != 4 {
-		t.Fail()
+		t.Fatal()
 	}
-	if hex.EncodeToString(pt.Endstate) != "00000000f8b410175906265f50de1d7b" {
-		t.Fail()
+	if hex.EncodeToString(pt.Endstate) != "00000000ea07101775424c5f08070816" {
+		t.Fatal(hex.EncodeToString(pt.Endstate))
 	}
 	pt.IncreaseNTime(1)
-	if hex.EncodeToString(pt.Endstate) != "00000000f8b410175906265f5a06265f" {
-		t.Fail()
+	if hex.EncodeToString(pt.Endstate) != "00000000ea07101775424c5f76424c5f" {
+		t.Fatal(hex.EncodeToString(pt.Endstate))
 	}
 	pw, err = UnmarshalTestWork()
 	if err != nil {
@@ -27,14 +27,14 @@ func TestNewTask(t *testing.T) {
 	}
 	pt = NewTask(pw, 2, false)
 	if len(pt.Midstates) != 2 {
-		t.Fail()
+		t.Fatal()
 	}
-	if hex.EncodeToString(pt.Endstate) != "7b1dde505f2606591710b4f800000000" {
-		t.Fail()
+	if hex.EncodeToString(pt.Endstate) != "160807085f4c4275171007ea00000000" {
+		t.Fatal(hex.EncodeToString(pt.Endstate))
 	}
 	pt.IncreaseNTime(1)
-	if hex.EncodeToString(pt.Endstate) != "7b1dde505f26065a1710b4f800000000" {
-		t.Fail()
+	if hex.EncodeToString(pt.Endstate) != "160807085f4c4276171007ea00000000" {
+		t.Fatal(hex.EncodeToString(pt.Endstate))
 	}
 }
 

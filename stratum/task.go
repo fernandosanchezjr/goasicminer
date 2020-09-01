@@ -9,10 +9,12 @@ type Task struct {
 	VersionRollingMask uint32
 	ExtraNonce2        uint64
 	NTime              uint32
+	Nbits              uint32
 	Nonce              uint32
 	Midstates          [][32]byte
 	Endstate           []byte
 	Versions           []uint32
+	PlainHeader        [80]byte
 	Pool               *Pool
 	reversed           bool
 }
@@ -23,12 +25,14 @@ func NewTask(pw *Work, maxMidstates int, reversed bool) *Task {
 		VersionRollingMask: pw.VersionRollingMask,
 		ExtraNonce2:        pw.ExtraNonce2,
 		NTime:              pw.Ntime,
+		Nbits:              utils.CalculateCompactDifficulty(uint64(pw.Difficulty)),
 		Nonce:              pw.Nonce,
 		Versions:           pw.Versions(maxMidstates),
 		Pool:               pw.Pool,
 		reversed:           reversed,
 	}
 	var plainHeader = pw.PlainHeader()
+	copy(pt.PlainHeader[:], plainHeader)
 	var initialChunk = plainHeader[:64]
 	pt.Endstate = append([]byte{}, plainHeader[64:]...)
 	if reversed {

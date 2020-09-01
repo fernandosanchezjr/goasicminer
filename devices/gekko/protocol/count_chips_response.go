@@ -15,7 +15,7 @@ func NewCountChipsResponse() *CountChipsResponse {
 
 func (ccr *CountChipsResponse) UnmarshalBinary(data []byte) error {
 	if len(data)%7 != 0 {
-		return fmt.Errorf("Invalid CountChipsResponse length")
+		return fmt.Errorf("invalid CountChipsResponse length")
 	}
 	for len(data) > 0 {
 		ccr.Chips = append(ccr.Chips, hex.EncodeToString(data[:7]))

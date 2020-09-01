@@ -3,10 +3,11 @@ package protocol
 import (
 	"errors"
 	"github.com/epiclabs-io/elastic"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
 type SetDifficulty struct {
-	Difficulty Difficulty
+	Difficulty utils.Difficulty
 }
 
 func NewSetDifficulty(reply *Reply) (*SetDifficulty, error) {

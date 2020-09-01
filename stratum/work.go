@@ -15,14 +15,14 @@ type Work struct {
 	ExtraNonce2Len     int
 	VersionRolling     bool
 	VersionRollingMask uint32
-	Difficulty         protocol.Difficulty
+	Difficulty         utils.Difficulty
 	JobId              string
 	PrevHash           []byte
 	CoinBase1          []byte
 	CoinBase2          []byte
 	MerkleBranches     [][]byte
 	Version            uint32
-	Nbits              []byte
+	Nbits              uint32
 	Ntime              uint32
 	CleanJobs          bool
 	Nonce              uint32
@@ -64,26 +64,36 @@ func (pw *Work) String() string {
 }
 
 func (pw *Work) Coinbase() []byte {
-	coinbaseLen := len(pw.CoinBase1) + 8 + pw.ExtraNonce2Len + len(pw.CoinBase2)
+	extraNonce1 := make([]byte, 8)
+	binary.BigEndian.PutUint64(extraNonce1, pw.ExtraNonce1)
+	for i := 0; i < 8; i++ {
+		if extraNonce1[i] == 0 {
+			continue
+		} else {
+			extraNonce1 = extraNonce1[i:]
+			break
+		}
+	}
+	coinbaseLen := len(pw.CoinBase1) + len(extraNonce1) + pw.ExtraNonce2Len + len(pw.CoinBase2)
 	coinbaseBytes := make([]byte, 0, coinbaseLen)
 	coinbaseBuf := bytes.NewBuffer(coinbaseBytes)
 	coinbaseBuf.Write(pw.CoinBase1)
-	_ = binary.Write(coinbaseBuf, binary.BigEndian, pw.ExtraNonce1)
-	_ = binary.Write(coinbaseBuf, binary.BigEndian, pw.ExtraNonce2)
+	coinbaseBuf.Write(extraNonce1)
+	_ = binary.Write(coinbaseBuf, binary.LittleEndian, pw.ExtraNonce2)
 	coinbaseBuf.Write(pw.CoinBase2)
 	return coinbaseBuf.Bytes()
 }
 
 func (pw *Work) MerkleRoot() []byte {
-	coinbase := utils.DoubleHash(pw.Coinbase())
 	plainText := make([]byte, 64)
-	merkle_root := coinbase
+	merkleHash := utils.DoubleHash(pw.Coinbase())
+	copy(plainText[0:32], merkleHash[:])
 	for _, branch := range pw.MerkleBranches {
-		copy(plainText, merkle_root[:])
-		copy(plainText[32:], branch)
-		merkle_root = utils.DoubleHash(plainText)
+		copy(plainText[32:64], branch)
+		merkleHash = utils.DoubleHash(plainText)
+		copy(plainText[0:32], merkleHash[:])
 	}
-	return merkle_root[:]
+	return utils.SwapUint32(merkleHash[:])
 }
 
 func (pw *Work) PlainHeader() []byte {
@@ -93,7 +103,7 @@ func (pw *Work) PlainHeader() []byte {
 		headerBuf.Write(pw.PrevHash)
 		headerBuf.Write(pw.MerkleRoot())
 		_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)
-		headerBuf.Write(pw.Nbits)
+		_ = binary.Write(headerBuf, binary.BigEndian, pw.Nbits)
 		_ = binary.Write(headerBuf, binary.BigEndian, pw.Nonce)
 		pw.plainHeader = headerBuf.Bytes()
 	}
@@ -110,14 +120,16 @@ func (pw *Work) Versions(maxCount int) []uint32 {
 		}
 		pw.versions = make([]uint32, 0, maxCount)
 		pw.versions = append(pw.versions, pw.Version)
-		for i := 0; i < 32; i++ {
-			if (tmpMask & 1) == 1 {
-				pw.versions = append(pw.versions, pw.Version|1<<i)
-				if len(pw.versions) == maxCount {
-					break
+		if len(pw.versions) < maxCount {
+			for i := 0; i < 32; i++ {
+				if (tmpMask & 1) == 1 {
+					pw.versions = append(pw.versions, pw.Version|1<<i)
+					if len(pw.versions) == maxCount {
+						break
+					}
 				}
+				tmpMask = tmpMask >> 1
 			}
-			tmpMask = tmpMask >> 1
 		}
 	}
 	return pw.versions

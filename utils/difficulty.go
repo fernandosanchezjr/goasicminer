@@ -1,4 +1,4 @@
-package protocol
+package utils
 
 import (
 	"github.com/dustin/go-humanize"

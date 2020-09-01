@@ -28,6 +28,6 @@ func TestR606Controller_Initialize(t *testing.T) {
 			t.Fatal(err)
 		}
 		dev.UpdateWork(pw)
-		time.Sleep(45 * time.Second)
+		time.Sleep(48 * time.Hour)
 	}
 }

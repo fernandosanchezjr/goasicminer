@@ -2,10 +2,13 @@ package gekko
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"log"
+	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,54 +18,69 @@ const (
 	R606BaudDiv          = 1
 	R606MinFrequency     = 200
 	R606MaxFrequency     = 1200
-	R606DefaultFrequency = 200
+	R606DefaultFrequency = 900
 	R606NumCores         = 114
-	//R606RXLen = 7
-	R606MaxJobId = 0x7f
-	//R606SendQueueSize    = 4
-	R606NtimeRollSeconds = 60
+	R606NumChips         = 12
+	R606MaxJobId         = 0x7f
+	R606NtimeRollSeconds = 10
 	R606MidstateCount    = 4
+	R606MaxVerifyTasks   = R606MidstateCount * R606MidstateCount * R606MaxJobId
 	R606WaitFactor       = 0.5
-	R606ReadTimeout      = time.Duration(5 * time.Millisecond)
 )
 
 type R606Controller struct {
 	base.IController
-	base.ITaskDispatcher
 	lastReset        time.Time
 	frequency        float64
 	chipCount        int
 	tasks            []*protocol.Task
-	quitRead         chan struct{}
-	quitWrite        chan struct{}
+	quitMainLoop     chan struct{}
+	quitPrepareLoop  chan struct{}
+	quitVerifyLoop   chan struct{}
 	waiter           sync.WaitGroup
-	sendQueue        base.TaskChan
+	prepareQueue     chan *protocol.Task
+	sendQueue        chan *protocol.Task
+	resultsQueue     chan *base.TaskResult
+	verifyQueue      chan *base.TaskResult
 	currentPoolWork  *stratum.Work
 	currentPoolTask  *stratum.Task
 	nTimeOffset      uint32
 	taskMtx          sync.Mutex
 	fullscanDuration time.Duration
 	maxTaskWait      time.Duration
+	currentDiff      *big.Int
+	poolDiff         uint32
 }
 
 func NewR606Controller(controller base.IController) *R606Controller {
-	rc := &R606Controller{IController: controller, quitRead: make(chan struct{}), quitWrite: make(chan struct{}),
-		frequency: R606DefaultFrequency}
-	rc.ITaskDispatcher = base.NewTaskDispatcher(R606MaxJobId, rc.handleReady, rc.handleSend, rc.handleReceived,
-		rc.handleExpired)
+	rc := &R606Controller{IController: controller, quitMainLoop: make(chan struct{}),
+		quitPrepareLoop: make(chan struct{}), quitVerifyLoop: make(chan struct{}),
+		frequency: R606DefaultFrequency, currentDiff: big.NewInt(0)}
+	rc.AllocateTasks()
 	return rc
 }
 
+func (rc *R606Controller) AllocateTasks() {
+	var task *protocol.Task
+	var j byte
+	rc.tasks = make([]*protocol.Task, R606MaxJobId)
+	for j = 0; j < R606MaxJobId; j++ {
+		task = protocol.NewTask(j, R606MidstateCount)
+		task.SetBusyWork()
+		rc.tasks[j] = task
+	}
+}
+
 func (rc *R606Controller) Close() {
-	waitForReader := rc.quitRead != nil
-	for _, t := range rc.tasks {
-		t.Stop()
+	waitForReader := rc.quitMainLoop != nil
+	if rc.quitMainLoop != nil {
+		close(rc.quitMainLoop)
 	}
-	if rc.quitRead != nil {
-		close(rc.quitRead)
+	if rc.quitPrepareLoop != nil {
+		close(rc.quitPrepareLoop)
 	}
-	if rc.quitWrite != nil {
-		close(rc.quitWrite)
+	if rc.quitVerifyLoop != nil {
+		close(rc.quitVerifyLoop)
 	}
 	if rc.sendQueue != nil {
 		close(rc.sendQueue)
@@ -70,43 +88,39 @@ func (rc *R606Controller) Close() {
 	if waitForReader {
 		rc.waiter.Wait()
 	}
-	if rc.ITaskDispatcher != nil {
-		rc.ITaskDispatcher.Stop()
-	}
 	rc.IController.Close()
 }
 
 func (rc *R606Controller) Reset() error {
 	log.Println("Resetting", rc.LongString())
-	rc.tasks = []*protocol.Task{}
-	if err := rc.PerformReset(); err != nil {
+	if err := rc.performReset(); err != nil {
 		return err
 	}
-	if err := rc.CountChips(); err != nil {
+	if err := rc.countChips(); err != nil {
 		return err
 	} else {
 		log.Println(rc.LongString(), "found", rc.chipCount, "chips")
 	}
-	if err := rc.SendChainInactive(); err != nil {
+	if err := rc.sendChainInactive(); err != nil {
 		return err
 	}
-	if err := rc.SetBaud(); err != nil {
+	if err := rc.setBaud(); err != nil {
 		return err
 	}
 	for i := 0; i < rc.chipCount; i++ {
-		if err := rc.SetFrequency(R606DefaultFrequency, byte(i)); err != nil {
+		if err := rc.setFrequency(R606DefaultFrequency, byte(i)); err != nil {
 			return err
 		}
 	}
-	rc.SetTiming()
-	if err := rc.InitializeTasks(); err != nil {
+	rc.setTiming()
+	if err := rc.initializeTasks(); err != nil {
 		return err
 	}
 	log.Println(rc.LongString(), "reset")
 	return nil
 }
 
-func (rc *R606Controller) PerformReset() error {
+func (rc *R606Controller) performReset() error {
 	device := rc.USBDevice()
 	// Reverse-engineered from cgminer with wireshark
 	// FTDI Reset
@@ -151,7 +165,7 @@ func (rc *R606Controller) PerformReset() error {
 	return nil
 }
 
-func (rc *R606Controller) CountChips() error {
+func (rc *R606Controller) countChips() error {
 	var buf bytes.Buffer
 	cc := protocol.NewCountChips()
 	data, _ := cc.MarshalBinary()
@@ -159,20 +173,23 @@ func (rc *R606Controller) CountChips() error {
 		return err
 	}
 	time.Sleep(10 * time.Millisecond)
-	if err := rc.Read(&buf); err != nil {
+	if err := rc.ReadTimeout(&buf, 100*time.Millisecond); err != nil {
 		return err
 	} else {
 		ccr := protocol.NewCountChipsResponse()
 		if err := ccr.UnmarshalBinary(protocol.Separator.Clean(buf.Bytes())); err != nil {
-			return nil
+			return err
 		} else {
 			rc.chipCount = len(ccr.Chips)
+			if rc.chipCount != R606NumChips {
+				return fmt.Errorf("found %d chips instead of %d", rc.chipCount, R606NumChips)
+			}
 			return nil
 		}
 	}
 }
 
-func (rc *R606Controller) SendChainInactive() error {
+func (rc *R606Controller) sendChainInactive() error {
 	ci := protocol.NewChainInactive()
 	cic := protocol.NewChainInactiveChip(rc.chipCount)
 	if data, err := ci.MarshalBinary(); err != nil {
@@ -205,7 +222,7 @@ func (rc *R606Controller) SendChainInactive() error {
 	return nil
 }
 
-func (rc *R606Controller) SetBaud() error {
+func (rc *R606Controller) setBaud() error {
 	sba := protocol.NewSetBaudA(R606BaudDiv)
 	sbb := protocol.NewSetBaudGateBlockMessage(R606BaudDiv)
 	if data, err := sba.MarshalBinary(); err != nil {
@@ -231,7 +248,7 @@ func (rc *R606Controller) SetBaud() error {
 	return nil
 }
 
-func (rc *R606Controller) SetFrequency(frequency float64, asicId byte) error {
+func (rc *R606Controller) setFrequency(frequency float64, asicId byte) error {
 	sf := protocol.NewSetFrequency(R606MinFrequency, R606MaxFrequency, frequency, asicId)
 	if sf.Frequency != rc.frequency {
 		if data, err := sf.MarshalBinary(); err != nil {
@@ -240,18 +257,18 @@ func (rc *R606Controller) SetFrequency(frequency float64, asicId byte) error {
 			if err := rc.Write(data); err != nil {
 				return err
 			}
-			rc.SetTiming()
+			rc.setTiming()
 		}
 	}
 	return nil
 }
 
-func (rc *R606Controller) SetTiming() {
+func (rc *R606Controller) setTiming() {
 	hashRate := float64(rc.chipCount) * rc.frequency * R606NumCores * 1000000.0
 	fullScanMicroSeconds := 1000000.0 * (float64(0xffffffff) / hashRate)
-	rc.fullscanDuration = time.Duration(time.Duration(fullScanMicroSeconds*1000.0) * time.Nanosecond)
+	rc.fullscanDuration = time.Duration(fullScanMicroSeconds*1000.0) * time.Nanosecond
 	rc.maxTaskWait = time.Duration((R606WaitFactor * 4) * float64(rc.fullscanDuration))
-	minTaskWait := time.Duration(1 * time.Microsecond)
+	minTaskWait := 1 * time.Microsecond
 	maxTaskWait := 3 * rc.fullscanDuration
 	if rc.maxTaskWait < minTaskWait {
 		rc.maxTaskWait = minTaskWait
@@ -259,62 +276,30 @@ func (rc *R606Controller) SetTiming() {
 	if rc.maxTaskWait > maxTaskWait {
 		rc.maxTaskWait = maxTaskWait
 	}
+	log.Println("Hashrate", utils.HashRate(hashRate))
 	log.Println("Full scan time:", rc.fullscanDuration)
 	log.Println("Max task wait:", rc.maxTaskWait)
 }
 
-func (rc *R606Controller) InitializeTasks() error {
-	var task *protocol.Task
-	rc.sendQueue = make(base.TaskChan, R606MaxJobId)
-	rc.waiter.Add(2)
-	go rc.writeLoop()
-	go rc.readLoop()
-	rc.tasks = make([]*protocol.Task, R606MaxJobId)
-	var j byte
-	for j = 0; j < R606MaxJobId; j++ {
-		task = protocol.NewTask(j)
-		task.SetBusyWork()
-		rc.tasks[j] = task
+func (rc *R606Controller) initializeTasks() error {
+	rc.sendQueue = make(chan *protocol.Task, R606MaxJobId)
+	rc.prepareQueue = make(chan *protocol.Task, R606MaxJobId)
+	rc.resultsQueue = make(chan *base.TaskResult, R606MaxVerifyTasks)
+	rc.verifyQueue = make(chan *base.TaskResult, R606MaxVerifyTasks)
+	for i := 0; i < R606MaxVerifyTasks; i++ {
+		rc.resultsQueue <- base.NewTaskResult()
 	}
+	rc.waiter.Add(3)
+	go rc.prepareLoop()
+	go rc.verifyLoop()
+	go rc.mainLoop()
 	return nil
 }
 
-func (rc *R606Controller) handleReady(task base.ITask, dispatcher base.ITaskDispatcher) {
-	rc.taskMtx.Lock()
-	defer rc.taskMtx.Unlock()
-	defer dispatcher.OnError(task)
-	if rc.nTimeOffset == R606NtimeRollSeconds {
-		rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
-		rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
-		rc.nTimeOffset = 0
+func (rc *R606Controller) startWork() {
+	for _, task := range rc.tasks {
+		rc.sendQueue <- task
 	}
-	rc.currentPoolTask.IncreaseNTime(rc.nTimeOffset)
-	atomic.AddUint32(&rc.nTimeOffset, 1)
-	task.Update(rc.currentPoolTask)
-	rc.sendQueue <- task
-}
-
-func (rc *R606Controller) handleSend(task base.ITask, dispatcher base.ITaskDispatcher) {
-	defer dispatcher.OnError(task)
-	if data, err := task.MarshalBinary(); err != nil {
-		panic(err)
-	} else {
-		if err = rc.Write(data); err != nil {
-			panic(err)
-		}
-	}
-	task.StartOperation()
-}
-
-func (rc *R606Controller) handleReceived(task base.ITask, nonce uint32, midstate byte, dispatcher base.ITaskDispatcher) {
-	defer dispatcher.OnError(task)
-	log.Println("Received nonce", nonce, "for midstate", midstate, "from task", task.Index())
-}
-
-func (rc *R606Controller) handleExpired(task base.ITask, dispatcher base.ITaskDispatcher) {
-	defer dispatcher.OnError(task)
-	//dispatcher.OnReady(task)
-	log.Printf("Received expiration for %02x", task.Index())
 }
 
 func (rc *R606Controller) setupWork(work *stratum.Work) {
@@ -323,38 +308,82 @@ func (rc *R606Controller) setupWork(work *stratum.Work) {
 	rc.nTimeOffset = 0
 	started := rc.currentPoolWork != nil
 	rc.currentPoolWork = work
-	rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
-	taskWait := rc.maxTaskWait + time.Millisecond
-	for _, task := range rc.tasks {
-		task.Stop()
-		task.Start(rc.OnExpired, taskWait)
-	}
+	pdiff := big.NewInt(int64(work.Difficulty))
+	utils.CalculateDifficulty(pdiff, rc.currentDiff)
+	rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, false)
 	if !started {
-		rc.ITaskDispatcher.Start()
-		go func() {
-			for _, task := range rc.tasks {
-				rc.sendQueue <- task
-			}
-		}()
+		go rc.startWork()
 	}
 }
 
-func (rc *R606Controller) readLoop() {
-	buf := bytes.NewBuffer(make([]byte, 0, 512))
-	//var task *protocol.Task
-	var taskResponse *protocol.TaskResponse
-	rb := protocol.NewResponseBlock()
-	readTicker := time.NewTicker(1 * time.Millisecond)
+func (rc *R606Controller) prepareLoop() {
+	var task *protocol.Task
+	//started := time.Now()
+	timer := time.NewTicker(time.Minute)
 	for {
 		select {
-		case <-rc.quitRead:
-			readTicker.Stop()
+		case <-rc.quitPrepareLoop:
 			rc.waiter.Done()
+			timer.Stop()
+			rc.quitVerifyLoop = nil
+			return
+		case <-timer.C:
+			if rc.currentPoolWork == nil {
+				continue
+			}
+			rc.taskMtx.Lock()
+			atomic.AddUint32(&rc.currentPoolWork.Ntime, 60)
+			rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
+			rc.nTimeOffset = 0
+			rc.taskMtx.Unlock()
+		case task = <-rc.prepareQueue:
+			if task.Index()%R606MidstateCount != 0 {
+				continue
+			}
+			rc.taskMtx.Lock()
+			if rc.nTimeOffset == R606NtimeRollSeconds {
+				rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
+				rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
+				rc.nTimeOffset = 0
+				//atomic.AddUint32(&rc.currentPoolWork.Ntime, uint32(time.Since(started).Seconds()))
+				//started = time.Now()
+			}
+			rc.currentPoolTask.IncreaseNTime(rc.nTimeOffset)
+			atomic.AddUint32(&rc.nTimeOffset, 1)
+			task.Update(rc.currentPoolTask)
+			rc.taskMtx.Unlock()
+			rc.sendQueue <- task
+		}
+	}
+}
+
+func (rc *R606Controller) mainLoop() {
+	var midstate, index int
+	var work *stratum.Work
+	var currentTask *protocol.Task
+	var ok bool
+	buf := bytes.NewBuffer(make([]byte, 0, 512))
+	var nextResult *base.TaskResult
+	var taskResponse *protocol.TaskResponse
+	rb := protocol.NewResponseBlock()
+	readTicker := time.NewTicker(2 * time.Millisecond)
+	writeTicker := time.NewTicker(rc.fullscanDuration)
+	expireTicker := time.NewTicker(rc.maxTaskWait)
+	expireChan := make(chan *protocol.Task, R606MaxJobId)
+	workChan := rc.WorkChannel()
+	for {
+		select {
+		case <-rc.quitMainLoop:
+			readTicker.Stop()
+			writeTicker.Stop()
+			expireTicker.Stop()
+			rc.waiter.Done()
+			rc.quitMainLoop = nil
 			return
 		case <-readTicker.C:
 			buf.Reset()
 			rb.Count = 0
-			if err := rc.ReadTimeout(buf, R606ReadTimeout); err != nil {
+			if err := rc.ReadTimeout(buf, time.Millisecond); err != nil {
 				log.Println("Error reading response block:", err)
 				continue
 			}
@@ -364,40 +393,80 @@ func (rc *R606Controller) readLoop() {
 			}
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
-				if taskResponse.IsBusyWork() {
+				if taskResponse.BusyResponse() {
 					continue
 				}
-				//task = rc.tasks[taskResponse.JobId]
-				//rc.OnReceived(task)
-				log.Printf("Received response for %02x  %02x %02x", taskResponse.JobId, taskResponse.Midstate,
-					taskResponse.Nonce)
+				midstate = taskResponse.JobId % R606MidstateCount
+				if midstate != 0 {
+					index = taskResponse.JobId - midstate
+				} else {
+					index = taskResponse.JobId
+				}
+				if index > R606MaxJobId || index < 0 {
+					continue
+				}
+				nextResult = <-rc.resultsQueue
+				rc.tasks[index].UpdateResult(nextResult, taskResponse.Nonce, midstate)
+				rc.verifyQueue <- nextResult
 			}
+		case <-writeTicker.C:
+			//if currentTask != nil {
+			//	rc.prepareQueue <- currentTask
+			//}
+			select {
+			case currentTask, ok = <-rc.sendQueue:
+				if ok {
+					if data, err := currentTask.MarshalBinary(); err != nil {
+						panic(err)
+					} else {
+						if err = rc.Write(data); err != nil {
+							log.Println("USB write error:", err)
+						}
+					}
+					if currentTask.IsBusyWork() {
+						rc.prepareQueue <- currentTask
+					} else {
+						expireChan <- currentTask
+					}
+				}
+			default:
+			}
+		case <-expireTicker.C:
+			select {
+			case currentTask, ok = <-expireChan:
+				if ok {
+					rc.prepareQueue <- currentTask
+				}
+			default:
+			}
+		case work = <-workChan:
+			rc.setupWork(work)
 		}
 	}
 }
 
-func (rc *R606Controller) writeLoop() {
-	var work *stratum.Work
-	var next base.ITask
-	var ok bool
-	workChan := rc.WorkChannel()
-	writeTicker := time.NewTicker(rc.fullscanDuration)
+func (rc *R606Controller) verifyLoop() {
+	var verifyTask *base.TaskResult
+	var hashBig big.Int
 	for {
 		select {
-		case <-rc.quitRead:
-			writeTicker.Stop()
+		case <-rc.quitVerifyLoop:
 			rc.waiter.Done()
+			rc.quitVerifyLoop = nil
 			return
-		case <-writeTicker.C:
-			select {
-			case next, ok = <-rc.sendQueue:
-				if ok {
-					log.Printf("Sending %02x", next.Index())
-					rc.OnSend(next)
+		case verifyTask = <-rc.verifyQueue:
+			hash := verifyTask.CalculateHash()
+			if hash[31] == 0 && hash[30] == 0 && hash[29] == 0 && hash[28] == 0 {
+				utils.HashToBig(hash, &hashBig)
+				if hashBig.Cmp(rc.currentDiff) <= 0 {
+					log.Printf("%d Nonce %02x\nbigi: %x\ndiff: %x", verifyTask.ExtraNonce2, verifyTask.Nonce,
+						hashBig.Bytes(),
+						rc.currentDiff.Bytes())
 				}
 			}
-		case work = <-workChan:
-			rc.setupWork(work)
+			//log.Printf("Received nonce %02x, version %02x, ntime %02x, extraNonce %x for job id %s",
+			//	verifyTask.Nonce, verifyTask.Version, verifyTask.NTime, verifyTask.ExtraNonce2, verifyTask.JobId)
+			rc.resultsQueue <- verifyTask
 		}
 	}
 }
