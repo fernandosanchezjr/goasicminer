@@ -2,7 +2,7 @@ package gekko
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/gousb"
 )
 
 type R606 struct {
@@ -16,6 +16,12 @@ func NewR606() *R606 {
 	}
 }
 
-func (r *R606) NewController(_ base.IDriver, device *gousb.Device, inEndpoint, outEndpoint int) base.IController {
-	return NewR606Controller(r.IDriver.NewController(r, device, inEndpoint, outEndpoint))
+func (r *R606) NewController(
+	context *base.Context,
+	_ base.IDriver,
+	device *gousb.Device,
+	inEndpoint,
+	outEndpoint int,
+) base.IController {
+	return NewR606Controller(r.IDriver.NewController(context, r, device, inEndpoint, outEndpoint))
 }

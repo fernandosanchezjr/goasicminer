@@ -2,15 +2,17 @@ package stratum
 
 import (
 	"encoding/hex"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"testing"
 )
 
 func TestNewTask(t *testing.T) {
 	pw, err := UnmarshalTestWork()
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt := NewTask(pw, 4, true)
+	pt := NewTask(pw, 4, true, versions)
 	if len(pt.Midstates) != 4 {
 		t.Fatal()
 	}
@@ -25,7 +27,7 @@ func TestNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt = NewTask(pw, 2, false)
+	pt = NewTask(pw, 2, false, versions)
 	if len(pt.Midstates) != 2 {
 		t.Fatal()
 	}
@@ -40,12 +42,13 @@ func TestNewTask(t *testing.T) {
 
 func BenchmarkNewTask(b *testing.B) {
 	pw, err := UnmarshalTestWork()
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewTask(pw, 4, true)
+		_ = NewTask(pw, 4, true, versions)
 	}
 	b.StopTimer()
 }

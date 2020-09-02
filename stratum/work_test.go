@@ -59,10 +59,6 @@ func TestWork(t *testing.T) {
 	if hex.EncodeToString(doubleHash[:]) != "71ebc0d2147cb602520ed0a7286bc2aa9df9c3e329489c7067738c6e877e814d" {
 		t.Fatal(hex.EncodeToString(doubleHash[:]))
 	}
-	versions := pw.Versions(4)
-	if len(versions) != 4 {
-		t.Fatal()
-	}
 	clone := pw.Clone()
 	clone.Version = 0
 	if clone.Version == pw.Version {
@@ -82,18 +78,6 @@ func BenchmarkWork_PlainHeader(b *testing.B) {
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		pw.PlainHeader()
-	}
-	b.StopTimer()
-}
-
-func BenchmarkWork_Versions(b *testing.B) {
-	pw, err := UnmarshalTestWork()
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		_ = pw.Versions(4)
 	}
 	b.StopTimer()
 }

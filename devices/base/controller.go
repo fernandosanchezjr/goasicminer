@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/gousb"
 	"log"
 	"time"
 )
@@ -22,6 +22,7 @@ type IController interface {
 	String() string
 	LongString() string
 	Close()
+	Exit()
 	Driver() IDriver
 	USBDevice() *gousb.Device
 	InEndpoint() *gousb.InEndpoint
@@ -48,10 +49,11 @@ type Controller struct {
 	readBuffer        []byte
 	serialNumber      string
 	workChan          stratum.PoolWorkChan
+	context           *Context
 }
 
-func NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) *Controller {
-	return &Controller{Device: device, driver: driver, done: nil, inEndpointNumber: inEndpoint,
+func NewController(context *Context, driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) *Controller {
+	return &Controller{context: context, Device: device, driver: driver, done: nil, inEndpointNumber: inEndpoint,
 		outEndpointNumber: outEndpoint, workChan: make(stratum.PoolWorkChan, 1)}
 }
 
@@ -63,7 +65,14 @@ func (c *Controller) LongString() string {
 	return fmt.Sprintf("%s %s", c.driver, c)
 }
 
+func (c *Controller) recover() {
+	if err := recover(); err != nil {
+		log.Println("recovering from", err)
+	}
+}
+
 func (c *Controller) Close() {
+	defer c.recover()
 	if c.done != nil {
 		c.done()
 		c.done = nil
@@ -74,6 +83,13 @@ func (c *Controller) Close() {
 	if err := c.Device.Close(); err != nil {
 		log.Printf("Error closing %s: %v", c.LongString(), err)
 	}
+}
+
+func (c *Controller) Exit() {
+	log.Println(c.LongString(), "exiting")
+	c.Close()
+	defer c.recover()
+	c.context.Unregister(c)
 }
 
 func (c *Controller) Driver() IDriver {
@@ -179,7 +195,10 @@ func (c *Controller) ReadTimeout(buf *bytes.Buffer, timeout time.Duration) error
 }
 
 func (c *Controller) UpdateWork(work *stratum.Work) {
-	c.workChan <- work
+	select {
+	case c.workChan <- work:
+	default:
+	}
 }
 
 func (c *Controller) WorkChannel() stratum.PoolWorkChan {

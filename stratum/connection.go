@@ -1,6 +1,7 @@
 package stratum
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -21,10 +22,11 @@ func init() {
 }
 
 type Connection struct {
-	conn   *net.TCPConn
-	reader *json.Decoder
-	writer *json.Encoder
-	id     uint64
+	conn      *net.TCPConn
+	reader    *json.Decoder
+	writer    *json.Encoder
+	id        uint64
+	replyChan chan *protocol.Reply
 }
 
 func NewConnection(address string) (*Connection, error) {
@@ -46,7 +48,7 @@ func NewConnection(address string) (*Connection, error) {
 			return nil, err
 		}
 		if conn, ok = rawConn.(*net.TCPConn); !ok {
-			return nil, errors.New("Invalid connection object")
+			return nil, errors.New("invalid connection object")
 		}
 		if err = conn.SetKeepAlive(true); err != nil {
 			return nil, err
@@ -54,10 +56,13 @@ func NewConnection(address string) (*Connection, error) {
 		if err = conn.SetKeepAlivePeriod(30 * time.Second); err != nil {
 			return nil, err
 		}
-		if err = conn.SetReadBuffer(4096); err != nil {
-			return nil, err
-		}
-		return &Connection{conn: conn, reader: json.NewDecoder(conn), writer: json.NewEncoder(conn), id: 0}, nil
+		//if err = conn.SetReadBuffer(9152); err != nil {
+		//	return nil, err
+		//}
+		c := &Connection{conn: conn, reader: json.NewDecoder(conn), writer: json.NewEncoder(conn), id: 0,
+			replyChan: make(chan *protocol.Reply, 256)}
+		go c.mainLoop()
+		return c, nil
 	}
 	return nil, fmt.Errorf("No route to %s", address)
 }
@@ -86,17 +91,28 @@ func (c *Connection) Call(command protocol.IMethod) error {
 	return c.writer.Encode(command)
 }
 
-func (c *Connection) GetReply() (*protocol.Reply, error) {
-	r := &protocol.Reply{}
-	if err := c.conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
-		return nil, err
-	}
-	if err := c.reader.Decode(&r); err != nil {
-		return nil, err
-	} else {
-		if logRPC {
-			c.logRPC("RPC in:", r)
+func (c *Connection) mainLoop() {
+	for {
+		r := &protocol.Reply{}
+		if err := c.reader.Decode(&r); err != nil {
+			log.Println("Decode err:", err)
+		} else {
+			if logRPC {
+				c.logRPC("RPC in:", r)
+			}
+			c.replyChan <- r
 		}
-		return r, nil
+	}
+}
+
+func (c *Connection) GetReply() (*protocol.Reply, error) {
+	var reply *protocol.Reply
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	select {
+	case <-ctx.Done():
+		return nil, nil
+	case reply = <-c.replyChan:
+		cancel()
+		return reply, nil
 	}
 }

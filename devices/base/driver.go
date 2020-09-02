@@ -2,14 +2,14 @@ package base
 
 import (
 	"fmt"
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/gousb"
 )
 
 type IDriver interface {
 	MatchesPidVid(desc *gousb.DeviceDesc) bool
 	MatchesDevice(manufacturer, productName string) bool
 	String() string
-	NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController
+	NewController(context *Context, driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController
 	Equals(driver IDriver) bool
 	EndpointNumbers() (int, int)
 }
@@ -44,8 +44,14 @@ func (d *Driver) Equals(driver IDriver) bool {
 	return d.String() == driver.String()
 }
 
-func (d *Driver) NewController(driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController {
-	return NewController(driver, device, inEndpoint, outEndpoint)
+func (d *Driver) NewController(
+	context *Context,
+	driver IDriver,
+	device *gousb.Device,
+	inEndpoint,
+	outEndpoint int,
+) IController {
+	return NewController(context, driver, device, inEndpoint, outEndpoint)
 }
 
 func (d *Driver) EndpointNumbers() (int, int) {

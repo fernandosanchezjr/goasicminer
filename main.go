@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/governor"
 	"log"
@@ -20,6 +21,7 @@ func wait() {
 }
 
 func main() {
+	flag.Parse()
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)

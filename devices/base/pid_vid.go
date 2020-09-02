@@ -1,6 +1,6 @@
 package base
 
-import "github.com/google/gousb"
+import "github.com/fernandosanchezjr/gousb"
 
 type PidVid struct {
 	Product gousb.ID

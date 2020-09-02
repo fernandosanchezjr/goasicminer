@@ -2,6 +2,7 @@ package stratum
 
 import (
 	"fmt"
+	"github.com/bep/debounce"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"io"
@@ -25,6 +26,8 @@ const (
 )
 
 const RetryTimeout = 5 * time.Second
+const MaxCommandAge = 1 * time.Minute
+const CleanupTime = 1 * time.Minute
 
 type Pool struct {
 	config          config.Pool
@@ -38,6 +41,8 @@ type Pool struct {
 	notify          *protocol.Notify
 	configuration   *protocol.ConfigureResponse
 	workChan        PoolWorkChan
+	SubmitChan      chan *protocol.Submit
+	debouncer       func(f func())
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -46,6 +51,8 @@ func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
 		status:          Disconnected,
 		pendingCommands: make(map[uint64]protocol.IMethod),
 		workChan:        workChan,
+		SubmitChan:      make(chan *protocol.Submit, 32),
+		debouncer:       debounce.New(time.Second),
 	}
 	return p
 }
@@ -70,12 +77,27 @@ func (p *Pool) String() string {
 }
 
 func (p *Pool) loop() {
+	var submit *protocol.Submit
+	cleanupTicker := time.NewTicker(CleanupTime)
 	defer p.wg.Done()
 	for {
 		select {
 		case <-p.quit:
+			cleanupTicker.Stop()
 			p.handleQuit()
 			return
+		case <-cleanupTicker.C:
+			if len(p.pendingCommands) > 0 {
+				newPendingCommands := make(map[uint64]protocol.IMethod)
+				for id, cmd := range p.pendingCommands {
+					if cmd.Age() < MaxCommandAge {
+						newPendingCommands[id] = cmd
+					}
+				}
+				p.pendingCommands = newPendingCommands
+			}
+		case submit = <-p.SubmitChan:
+			p.handleSubmit(submit)
 		default:
 			switch p.status {
 			case Disconnected:
@@ -183,6 +205,20 @@ func (p *Pool) handleConfigured() {
 	}
 }
 
+func (p *Pool) handleSubmit(submit *protocol.Submit) {
+	submit.Params[0] = p.config.User
+	if p.notify.JobId != submit.Params[1] {
+		return
+	}
+	if err := p.conn.Call(submit); err != nil {
+		log.Println("Pool", p, "submit error:", err)
+		p.retryTimeout()
+		p.disconnect()
+	} else {
+		p.pendingCommands[submit.Id] = submit
+	}
+}
+
 func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	method, ok := p.pendingCommands[reply.Id]
 	if !ok {
@@ -220,6 +256,11 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 		} else {
 			p.status = Configured
 			p.configuration = cr
+		}
+	case *protocol.Submit:
+		delete(p.pendingCommands, m.Id)
+		if reply.Result.(bool) != true {
+			log.Println("Pool submit error:", reply.Error)
 		}
 	default:
 		log.Println("Pool", p, "received unknown response:", reply)
@@ -272,9 +313,14 @@ func (p *Pool) sendRecovery() {
 }
 
 func (p *Pool) processWork() {
+	p.debouncer(p.doProcessWork)
+}
+
+func (p *Pool) doProcessWork() {
 	if p.status != Authorized {
 		return
 	}
+	time.Sleep(1 * time.Second)
 	if p.subscription == nil {
 		return
 	}

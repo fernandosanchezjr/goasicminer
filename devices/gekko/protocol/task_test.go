@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"testing"
 )
 
@@ -13,12 +14,13 @@ func TestTask_UpdateBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(5)
-	pt := stratum.NewTask(pw, 4, true)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	pt := stratum.NewTask(pw, 4, true, versions)
 	task := NewTask(0x75, 1)
 	task.Update(pt)
 	data, _ := task.MarshalBinary()
 	hexData := hex.EncodeToString(data)
-	if hexData != "2136750100000000ea07101775424c5f8b4382dcf25f41a9e5fcee0f708cb3f1de287b3e1e78a58eb128539f8e1b866a2393d62ed8ae" {
+	if hexData != "2136750180ff7f1bea07101775424c5f8b4382dcf25f41a9e5fcee0f708cb3f1de287b3e1e78a58eb128539f8e1b866a2393d62ee0e2" {
 		t.Fatal(hexData)
 	}
 }
@@ -29,12 +31,13 @@ func TestTask_TestEncoded(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(4)
-	pt := stratum.NewTask(pw, 1, true)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	pt := stratum.NewTask(pw, 1, true, versions)
 	task := NewTask(0x74, 1)
 	task.Update(pt)
 	data, _ := task.MarshalBinary()
 	hexData := hex.EncodeToString(data)
-	if hexData != "2136740100000000ea07101775424c5f69aa3fa0e3ff3bf3977a3140423c727f895210de0c6e467e18269b6d1936c98fd8ede8c4213c" {
+	if hexData != "2136740180ff7f1bea07101775424c5f69aa3fa0e3ff3bf3977a3140423c727f895210de0c6e467e18269b6d1936c98fd8ede8c41970" {
 		t.Fatal(hexData)
 	}
 }
@@ -44,7 +47,8 @@ func BenchmarkTask_Update(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	pt := stratum.NewTask(pw, 4, true)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	pt := stratum.NewTask(pw, 4, true, versions)
 	task := NewTask(0x75, 4)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
@@ -59,7 +63,8 @@ func TestTask_Result(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt := stratum.NewTask(pw, 1, true)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	pt := stratum.NewTask(pw, 1, true, versions)
 	pt.NTime = 0x5f2606b4
 	task := NewTask(0x75, 1)
 	task.Update(pt)

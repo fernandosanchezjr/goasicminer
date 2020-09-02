@@ -19,7 +19,7 @@ type Task struct {
 	reversed           bool
 }
 
-func NewTask(pw *Work, maxMidstates int, reversed bool) *Task {
+func NewTask(pw *Work, maxMidstates int, reversed bool, versions *utils.Versions) *Task {
 	pt := &Task{
 		JobId:              pw.JobId,
 		VersionRollingMask: pw.VersionRollingMask,
@@ -27,7 +27,6 @@ func NewTask(pw *Work, maxMidstates int, reversed bool) *Task {
 		NTime:              pw.Ntime,
 		Nbits:              utils.CalculateCompactDifficulty(uint64(pw.Difficulty)),
 		Nonce:              pw.Nonce,
-		Versions:           pw.Versions(maxMidstates),
 		Pool:               pw.Pool,
 		reversed:           reversed,
 	}
@@ -40,23 +39,31 @@ func NewTask(pw *Work, maxMidstates int, reversed bool) *Task {
 			pt.Endstate[j], pt.Endstate[k] = pt.Endstate[k], pt.Endstate[j]
 		}
 	}
-	var versionCount = len(pt.Versions)
-	var version uint32
-	pt.Midstates = make([][32]byte, versionCount)
-	for i := 0; i < versionCount; i++ {
-		version = pt.Versions[i]
-		if version == pw.Version {
-			pt.Midstates[i] = utils.Midstate(initialChunk)
-		} else {
-			plainHeader[0] = byte((version >> 24) & 0xff)
-			plainHeader[1] = byte((version >> 16) & 0xff)
-			plainHeader[2] = byte((version >> 8) & 0xff)
-			plainHeader[3] = byte(version & 0xff)
-			pt.Midstates[i] = utils.Midstate(initialChunk)
-		}
-		if reversed {
-			for j, k := 0, len(pt.Midstates[i])-1; j < k; j, k = j+1, k-1 {
-				pt.Midstates[i][j], pt.Midstates[i][k] = pt.Midstates[i][k], pt.Midstates[i][j]
+	if !pw.VersionRolling {
+		pt.Versions = []uint32{pw.Version}
+		pt.Midstates = [][32]byte{utils.Midstate(initialChunk)}
+	} else {
+		pt.Versions = make([]uint32, maxMidstates)
+		pt.Midstates = make([][32]byte, maxMidstates)
+		versions.Retrieve(pt.Versions)
+		for i, version := range pt.Versions {
+			if version == 0x0 {
+				pt.Versions = pt.Versions[0:i]
+				pt.Midstates = pt.Midstates[0:i]
+				break
+			} else if version == pw.Version {
+				pt.Midstates[i] = utils.Midstate(initialChunk)
+			} else {
+				plainHeader[0] = byte((version >> 24) & 0xff)
+				plainHeader[1] = byte((version >> 16) & 0xff)
+				plainHeader[2] = byte((version >> 8) & 0xff)
+				plainHeader[3] = byte(version & 0xff)
+				pt.Midstates[i] = utils.Midstate(initialChunk)
+			}
+			if reversed {
+				for j, k := 0, len(pt.Midstates[i])-1; j < k; j, k = j+1, k-1 {
+					pt.Midstates[i][j], pt.Midstates[i][k] = pt.Midstates[i][k], pt.Midstates[i][j]
+				}
 			}
 		}
 	}

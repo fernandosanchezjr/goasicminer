@@ -1,7 +1,8 @@
 package base
 
 import (
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/gousb"
 	"log"
 	"sync"
 )
@@ -77,4 +78,12 @@ func (c *Context) GetControllers(driver IDriver) []IController {
 		}
 	}
 	return found
+}
+
+func (c *Context) UpdateWork(work *stratum.Work) {
+	c.controllersMtx.Lock()
+	defer c.controllersMtx.Unlock()
+	for _, ct := range c.controllers {
+		ct.UpdateWork(work)
+	}
 }

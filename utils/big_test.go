@@ -10,7 +10,9 @@ func Test_DifficultyAssumptions(t *testing.T) {
 	resultDiff := big.NewInt(0)
 	pdiff := big.NewInt(8192)
 	resultDiff.Div(DiffOne, pdiff)
-	log.Printf("%x", resultDiff.Bytes())
+	log.Printf("%x", pdiff.Bytes())
+	log.Printf("%d", pdiff.Int64())
+	log.Printf("%d", pdiff.Uint64())
 	//000000000007fff8000000000000000000000000000000000000000000000000
 	//000000000007fff8000000000000000000000000000000000000000000000000
 }

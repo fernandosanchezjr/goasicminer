@@ -1,14 +1,14 @@
 package base
 
 import (
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/gousb"
 )
 
 type IDriverCatalog interface {
 	MatchesPidVid(desc *gousb.DeviceDesc) bool
 	MatchesDevice(device *gousb.Device) (IDriver, error)
 	String() string
-	FindDevices(context *Context) ([]IController, error)
+	FindControllers(context *Context) ([]IController, error)
 }
 
 type DriverCatalog struct {
@@ -62,7 +62,7 @@ func (dc *DriverCatalog) FindControllers(context *Context) ([]IController, error
 				return nil, err
 			} else if driver != nil {
 				in, out := driver.EndpointNumbers()
-				controller := driver.NewController(driver, d, in, out)
+				controller := driver.NewController(context, driver, d, in, out)
 				if !context.InUse(controller) {
 					if err := controller.Initialize(); err != nil {
 						controller.Close()

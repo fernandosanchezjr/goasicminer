@@ -2,7 +2,7 @@ package gekko
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
-	"github.com/google/gousb"
+	"github.com/fernandosanchezjr/gousb"
 	"testing"
 )
 

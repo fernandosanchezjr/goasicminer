@@ -6,11 +6,11 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	protocol2 "github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"log"
 	"math/big"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +22,6 @@ const (
 	R606NumCores         = 114
 	R606NumChips         = 12
 	R606MaxJobId         = 0x7f
-	R606NtimeRollSeconds = 10
 	R606MidstateCount    = 4
 	R606MaxVerifyTasks   = R606MidstateCount * R606MidstateCount * R606MaxJobId
 	R606WaitFactor       = 0.5
@@ -42,9 +41,9 @@ type R606Controller struct {
 	sendQueue        chan *protocol.Task
 	resultsQueue     chan *base.TaskResult
 	verifyQueue      chan *base.TaskResult
+	versions         *utils.Versions
 	currentPoolWork  *stratum.Work
 	currentPoolTask  *stratum.Task
-	nTimeOffset      uint32
 	taskMtx          sync.Mutex
 	fullscanDuration time.Duration
 	maxTaskWait      time.Duration
@@ -56,11 +55,11 @@ func NewR606Controller(controller base.IController) *R606Controller {
 	rc := &R606Controller{IController: controller, quitMainLoop: make(chan struct{}),
 		quitPrepareLoop: make(chan struct{}), quitVerifyLoop: make(chan struct{}),
 		frequency: R606DefaultFrequency, currentDiff: big.NewInt(0)}
-	rc.AllocateTasks()
+	rc.allocateTasks()
 	return rc
 }
 
-func (rc *R606Controller) AllocateTasks() {
+func (rc *R606Controller) allocateTasks() {
 	var task *protocol.Task
 	var j byte
 	rc.tasks = make([]*protocol.Task, R606MaxJobId)
@@ -94,9 +93,11 @@ func (rc *R606Controller) Close() {
 func (rc *R606Controller) Reset() error {
 	log.Println("Resetting", rc.LongString())
 	if err := rc.performReset(); err != nil {
+		go rc.Exit()
 		return err
 	}
 	if err := rc.countChips(); err != nil {
+		go rc.Exit()
 		return err
 	} else {
 		log.Println(rc.LongString(), "found", rc.chipCount, "chips")
@@ -114,6 +115,7 @@ func (rc *R606Controller) Reset() error {
 	}
 	rc.setTiming()
 	if err := rc.initializeTasks(); err != nil {
+		go rc.Exit()
 		return err
 	}
 	log.Println(rc.LongString(), "reset")
@@ -303,14 +305,13 @@ func (rc *R606Controller) startWork() {
 }
 
 func (rc *R606Controller) setupWork(work *stratum.Work) {
+	rc.versions = utils.NewVersions(work.Version, work.VersionRollingMask, R606MidstateCount)
 	rc.taskMtx.Lock()
 	defer rc.taskMtx.Unlock()
-	rc.nTimeOffset = 0
 	started := rc.currentPoolWork != nil
 	rc.currentPoolWork = work
-	pdiff := big.NewInt(int64(work.Difficulty))
-	utils.CalculateDifficulty(pdiff, rc.currentDiff)
-	rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, false)
+	rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, false, rc.versions)
+	utils.CalculateDifficulty(big.NewInt(int64(work.Difficulty)), rc.currentDiff)
 	if !started {
 		go rc.startWork()
 	}
@@ -318,38 +319,19 @@ func (rc *R606Controller) setupWork(work *stratum.Work) {
 
 func (rc *R606Controller) prepareLoop() {
 	var task *protocol.Task
-	//started := time.Now()
-	timer := time.NewTicker(time.Minute)
 	for {
 		select {
 		case <-rc.quitPrepareLoop:
 			rc.waiter.Done()
-			timer.Stop()
 			rc.quitVerifyLoop = nil
 			return
-		case <-timer.C:
-			if rc.currentPoolWork == nil {
-				continue
-			}
-			rc.taskMtx.Lock()
-			atomic.AddUint32(&rc.currentPoolWork.Ntime, 60)
-			rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
-			rc.nTimeOffset = 0
-			rc.taskMtx.Unlock()
 		case task = <-rc.prepareQueue:
 			if task.Index()%R606MidstateCount != 0 {
 				continue
 			}
 			rc.taskMtx.Lock()
-			if rc.nTimeOffset == R606NtimeRollSeconds {
-				rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
-				rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true)
-				rc.nTimeOffset = 0
-				//atomic.AddUint32(&rc.currentPoolWork.Ntime, uint32(time.Since(started).Seconds()))
-				//started = time.Now()
-			}
-			rc.currentPoolTask.IncreaseNTime(rc.nTimeOffset)
-			atomic.AddUint32(&rc.nTimeOffset, 1)
+			rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
+			rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true, rc.versions)
 			task.Update(rc.currentPoolTask)
 			rc.taskMtx.Unlock()
 			rc.sendQueue <- task
@@ -385,7 +367,9 @@ func (rc *R606Controller) mainLoop() {
 			rb.Count = 0
 			if err := rc.ReadTimeout(buf, time.Millisecond); err != nil {
 				log.Println("Error reading response block:", err)
-				continue
+				rc.waiter.Done()
+				go rc.Exit()
+				return
 			}
 			if err := rb.UnmarshalBinary(protocol.Separator.Clean(buf.Bytes())); err != nil {
 				log.Println("Error decoding response block:", err)
@@ -410,9 +394,6 @@ func (rc *R606Controller) mainLoop() {
 				rc.verifyQueue <- nextResult
 			}
 		case <-writeTicker.C:
-			//if currentTask != nil {
-			//	rc.prepareQueue <- currentTask
-			//}
 			select {
 			case currentTask, ok = <-rc.sendQueue:
 				if ok {
@@ -421,6 +402,9 @@ func (rc *R606Controller) mainLoop() {
 					} else {
 						if err = rc.Write(data); err != nil {
 							log.Println("USB write error:", err)
+							rc.waiter.Done()
+							go rc.Exit()
+							return
 						}
 					}
 					if currentTask.IsBusyWork() {
@@ -447,7 +431,12 @@ func (rc *R606Controller) mainLoop() {
 
 func (rc *R606Controller) verifyLoop() {
 	var verifyTask *base.TaskResult
+	var resultDiff big.Int
+	var diff utils.Difficulty
 	var hashBig big.Int
+	var match bool
+	var matches, nonMatches uint64
+	var submitVersion uint32
 	for {
 		select {
 		case <-rc.quitVerifyLoop:
@@ -457,12 +446,31 @@ func (rc *R606Controller) verifyLoop() {
 		case verifyTask = <-rc.verifyQueue:
 			hash := verifyTask.CalculateHash()
 			if hash[31] == 0 && hash[30] == 0 && hash[29] == 0 && hash[28] == 0 {
+				matches += 1
 				utils.HashToBig(hash, &hashBig)
-				if hashBig.Cmp(rc.currentDiff) <= 0 {
-					log.Printf("%d Nonce %02x\nbigi: %x\ndiff: %x", verifyTask.ExtraNonce2, verifyTask.Nonce,
-						hashBig.Bytes(),
-						rc.currentDiff.Bytes())
+				match = hashBig.Cmp(rc.currentDiff) <= 0
+				if match {
+					utils.CalculateDifficulty(&hashBig, &resultDiff)
+					diff = utils.Difficulty(resultDiff.Int64())
+					rc.taskMtx.Lock()
+					if rc.currentPoolWork.VersionRolling {
+						submitVersion = verifyTask.Version & ^rc.currentPoolWork.Version
+					} else {
+						submitVersion = 0
+					}
+					rc.taskMtx.Unlock()
+					rc.currentPoolWork.Pool.SubmitChan <- protocol2.NewSubmit(
+						verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
+					)
+					log.Printf("Extra nonce2 %016x nonce %08x version %08x diff %s",
+						verifyTask.ExtraNonce2, verifyTask.Nonce, verifyTask.Version, diff)
+				} else {
+					if matches%0xff == 0 {
+						log.Println(matches, "matches,", nonMatches, "non-matches")
+					}
 				}
+			} else {
+				nonMatches += 1
 			}
 			//log.Printf("Received nonce %02x, version %02x, ntime %02x, extraNonce %x for job id %s",
 			//	verifyTask.Nonce, verifyTask.Version, verifyTask.NTime, verifyTask.ExtraNonce2, verifyTask.JobId)

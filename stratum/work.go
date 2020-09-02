@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"math/bits"
 )
 
 type Work struct {
@@ -28,7 +27,6 @@ type Work struct {
 	Nonce              uint32
 	Pool               *Pool
 	plainHeader        []byte
-	versions           []uint32
 }
 
 type PoolWorkChan chan *Work
@@ -40,7 +38,7 @@ func NewWork(
 	notify *protocol.Notify,
 	pool *Pool,
 ) *Work {
-	return &Work{
+	w := &Work{
 		ExtraNonce1:        subscription.ExtraNonce1,
 		ExtraNonce2Len:     subscription.ExtraNonce2Len,
 		VersionRolling:     configuration.VersionRolling,
@@ -57,6 +55,7 @@ func NewWork(
 		CleanJobs:          notify.CleanJobs,
 		Pool:               pool,
 	}
+	return w
 }
 
 func (pw *Work) String() string {
@@ -110,31 +109,6 @@ func (pw *Work) PlainHeader() []byte {
 	return pw.plainHeader
 }
 
-func (pw *Work) Versions(maxCount int) []uint32 {
-	if len(pw.versions) == 0 {
-		// Inspired by docs from https://github.com/slushpool/stratumprotocol/blob/master/stratum-extensions.mediawiki
-		tmpMask := pw.VersionRollingMask
-		maxOnes := bits.OnesCount32(tmpMask)
-		if maxCount > maxOnes {
-			maxCount = maxOnes
-		}
-		pw.versions = make([]uint32, 0, maxCount)
-		pw.versions = append(pw.versions, pw.Version)
-		if len(pw.versions) < maxCount {
-			for i := 0; i < 32; i++ {
-				if (tmpMask & 1) == 1 {
-					pw.versions = append(pw.versions, pw.Version|1<<i)
-					if len(pw.versions) == maxCount {
-						break
-					}
-				}
-				tmpMask = tmpMask >> 1
-			}
-		}
-	}
-	return pw.versions
-}
-
 func (pw *Work) Clone() *Work {
 	result := *pw
 	return &result
@@ -142,7 +116,6 @@ func (pw *Work) Clone() *Work {
 
 func (pw *Work) Reset() {
 	pw.plainHeader = nil
-	pw.versions = nil
 }
 
 func (pw *Work) ExtraNonce2Mask() uint64 {
