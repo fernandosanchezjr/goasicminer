@@ -9,6 +9,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"log"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -61,7 +62,7 @@ func NewConnection(address string) (*Connection, error) {
 		//}
 		c := &Connection{conn: conn, reader: json.NewDecoder(conn), writer: json.NewEncoder(conn), id: 0,
 			replyChan: make(chan *protocol.Reply, 256)}
-		go c.mainLoop()
+		go c.replyLoop()
 		return c, nil
 	}
 	return nil, fmt.Errorf("No route to %s", address)
@@ -91,11 +92,15 @@ func (c *Connection) Call(command protocol.IMethod) error {
 	return c.writer.Encode(command)
 }
 
-func (c *Connection) mainLoop() {
+func (c *Connection) replyLoop() {
 	for {
 		r := &protocol.Reply{}
 		if err := c.reader.Decode(&r); err != nil {
-			log.Println("Decode err:", err)
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				return
+			} else {
+				log.Println("Decode err:", err)
+			}
 		} else {
 			if logRPC {
 				c.logRPC("RPC in:", r)

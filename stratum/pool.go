@@ -2,7 +2,6 @@ package stratum
 
 import (
 	"fmt"
-	"github.com/bep/debounce"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"io"
@@ -42,7 +41,6 @@ type Pool struct {
 	configuration   *protocol.ConfigureResponse
 	workChan        PoolWorkChan
 	SubmitChan      chan *protocol.Submit
-	debouncer       func(f func())
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -52,7 +50,6 @@ func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
 		pendingCommands: make(map[uint64]protocol.IMethod),
 		workChan:        workChan,
 		SubmitChan:      make(chan *protocol.Submit, 32),
-		debouncer:       debounce.New(time.Second),
 	}
 	return p
 }
@@ -97,7 +94,7 @@ func (p *Pool) loop() {
 				p.pendingCommands = newPendingCommands
 			}
 		case submit = <-p.SubmitChan:
-			p.handleSubmit(submit)
+			go p.handleSubmit(submit)
 		default:
 			switch p.status {
 			case Disconnected:
@@ -259,7 +256,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 		}
 	case *protocol.Submit:
 		delete(p.pendingCommands, m.Id)
-		if reply.Result.(bool) != true {
+		if reply.Error != nil {
 			log.Println("Pool submit error:", reply.Error)
 		}
 	default:
@@ -313,10 +310,6 @@ func (p *Pool) sendRecovery() {
 }
 
 func (p *Pool) processWork() {
-	p.debouncer(p.doProcessWork)
-}
-
-func (p *Pool) doProcessWork() {
 	if p.status != Authorized {
 		return
 	}

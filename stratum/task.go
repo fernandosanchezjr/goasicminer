@@ -19,7 +19,7 @@ type Task struct {
 	reversed           bool
 }
 
-func NewTask(pw *Work, maxMidstates int, reversed bool, versions *utils.Versions) *Task {
+func NewTask(pw *Work, maxMidstates int, reversed bool, versions []uint32) *Task {
 	pt := &Task{
 		JobId:              pw.JobId,
 		VersionRollingMask: pw.VersionRollingMask,
@@ -31,7 +31,7 @@ func NewTask(pw *Work, maxMidstates int, reversed bool, versions *utils.Versions
 		reversed:           reversed,
 	}
 	var plainHeader = pw.PlainHeader()
-	copy(pt.PlainHeader[:], plainHeader)
+	copy(pt.PlainHeader[:], pw.PlainHeader())
 	var initialChunk = plainHeader[:64]
 	pt.Endstate = append([]byte{}, plainHeader[64:]...)
 	if reversed {
@@ -45,7 +45,7 @@ func NewTask(pw *Work, maxMidstates int, reversed bool, versions *utils.Versions
 	} else {
 		pt.Versions = make([]uint32, maxMidstates)
 		pt.Midstates = make([][32]byte, maxMidstates)
-		versions.Retrieve(pt.Versions)
+		copy(pt.Versions, versions)
 		for i, version := range pt.Versions {
 			if version == 0x0 {
 				pt.Versions = pt.Versions[0:i]

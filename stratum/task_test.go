@@ -12,7 +12,9 @@ func TestNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt := NewTask(pw, 4, true, versions)
+	var versionMasks [4]uint32
+	versions.Retrieve(versionMasks[:])
+	pt := NewTask(pw, 4, true, versionMasks[:])
 	if len(pt.Midstates) != 4 {
 		t.Fatal()
 	}
@@ -27,7 +29,7 @@ func TestNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt = NewTask(pw, 2, false, versions)
+	pt = NewTask(pw, 2, false, versionMasks[:])
 	if len(pt.Midstates) != 2 {
 		t.Fatal()
 	}
@@ -42,13 +44,15 @@ func TestNewTask(t *testing.T) {
 
 func BenchmarkNewTask(b *testing.B) {
 	pw, err := UnmarshalTestWork()
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	if err != nil {
 		b.Fatal(err)
 	}
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	var versionMasks [4]uint32
+	versions.Retrieve(versionMasks[:])
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewTask(pw, 4, true, versions)
+		_ = NewTask(pw, 4, true, versionMasks[:])
 	}
 	b.StopTimer()
 }

@@ -26,7 +26,8 @@ type Work struct {
 	CleanJobs          bool
 	Nonce              uint32
 	Pool               *Pool
-	plainHeader        []byte
+	plainHeader        [80]byte
+	headerBuf          *bytes.Buffer
 }
 
 type PoolWorkChan chan *Work
@@ -54,6 +55,7 @@ func NewWork(
 		Ntime:              notify.NTime,
 		CleanJobs:          notify.CleanJobs,
 		Pool:               pool,
+		headerBuf:          bytes.NewBuffer(make([]byte, 0, 80)),
 	}
 	return w
 }
@@ -84,38 +86,44 @@ func (pw *Work) Coinbase() []byte {
 }
 
 func (pw *Work) MerkleRoot() []byte {
-	plainText := make([]byte, 64)
+	var plainText [64]byte
 	merkleHash := utils.DoubleHash(pw.Coinbase())
 	copy(plainText[0:32], merkleHash[:])
 	for _, branch := range pw.MerkleBranches {
 		copy(plainText[32:64], branch)
-		merkleHash = utils.DoubleHash(plainText)
+		merkleHash = utils.DoubleHash(plainText[:])
 		copy(plainText[0:32], merkleHash[:])
 	}
-	return utils.SwapUint32(merkleHash[:])
+	utils.SwapUint32(merkleHash[:])
+	return merkleHash[:]
 }
 
 func (pw *Work) PlainHeader() []byte {
-	if len(pw.plainHeader) == 0 {
-		headerBuf := bytes.NewBuffer(make([]byte, 0, 80))
-		_ = binary.Write(headerBuf, binary.BigEndian, pw.Version)
-		headerBuf.Write(pw.PrevHash)
-		headerBuf.Write(pw.MerkleRoot())
-		_ = binary.Write(headerBuf, binary.BigEndian, pw.Ntime)
-		_ = binary.Write(headerBuf, binary.BigEndian, pw.Nbits)
-		_ = binary.Write(headerBuf, binary.BigEndian, pw.Nonce)
-		pw.plainHeader = headerBuf.Bytes()
-	}
-	return pw.plainHeader
+	pw.plainHeader[0] = byte((pw.Version >> 24) & 0xff)
+	pw.plainHeader[1] = byte((pw.Version >> 16) & 0xff)
+	pw.plainHeader[2] = byte((pw.Version >> 8) & 0xff)
+	pw.plainHeader[3] = byte(pw.Version & 0xff)
+	copy(pw.plainHeader[4:36], pw.PrevHash)
+	copy(pw.plainHeader[36:68], pw.MerkleRoot())
+	pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
+	pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
+	pw.plainHeader[70] = byte((pw.Ntime >> 8) & 0xff)
+	pw.plainHeader[71] = byte(pw.Ntime & 0xff)
+	pw.plainHeader[72] = byte((pw.Nbits >> 24) & 0xff)
+	pw.plainHeader[73] = byte((pw.Nbits >> 16) & 0xff)
+	pw.plainHeader[74] = byte((pw.Nbits >> 8) & 0xff)
+	pw.plainHeader[75] = byte(pw.Nbits & 0xff)
+	pw.plainHeader[76] = byte((pw.Nonce >> 24) & 0xff)
+	pw.plainHeader[77] = byte((pw.Nonce >> 16) & 0xff)
+	pw.plainHeader[78] = byte((pw.Nonce >> 8) & 0xff)
+	pw.plainHeader[79] = byte(pw.Nonce & 0xff)
+	return pw.plainHeader[:]
 }
 
 func (pw *Work) Clone() *Work {
 	result := *pw
+	pw.headerBuf = bytes.NewBuffer(make([]byte, 0, 80))
 	return &result
-}
-
-func (pw *Work) Reset() {
-	pw.plainHeader = nil
 }
 
 func (pw *Work) ExtraNonce2Mask() uint64 {
@@ -124,5 +132,4 @@ func (pw *Work) ExtraNonce2Mask() uint64 {
 
 func (pw *Work) SetExtraNonce2(extraNonce uint64) {
 	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
-	pw.Reset()
 }

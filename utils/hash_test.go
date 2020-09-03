@@ -12,7 +12,8 @@ func TestDoubleHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash := DoubleHash(SwapUint32(plainHeader))
+	SwapUint32(plainHeader)
+	hash := DoubleHash(plainHeader)
 	log.Println("0000000046f016c18a28475a5ac2daa435583156184f7b9089f44fbbb46504e1")
 	log.Println(hex.EncodeToString(hash[:]))
 }

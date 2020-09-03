@@ -1,19 +1,10 @@
 package utils
 
-import (
-	"bytes"
-	"encoding/binary"
-)
-
-func SwapUint32(data []byte) []byte {
+func SwapUint32(data []byte) {
 	dataLen := len(data)
-	readBuf := bytes.NewBuffer(data)
-	writeBuf := bytes.NewBuffer(make([]byte, 0, dataLen))
-	uint32Count := dataLen / 4
-	var tmp uint32
-	for i := 0; i < uint32Count; i++ {
-		_ = binary.Read(readBuf, binary.LittleEndian, &tmp)
-		_ = binary.Write(writeBuf, binary.BigEndian, tmp)
+	var i, j, k, l int
+	for i = 0; i < dataLen; i += 4 {
+		j, k, l = i+1, i+2, i+3
+		data[i], data[j], data[k], data[l] = data[l], data[k], data[j], data[i]
 	}
-	return writeBuf.Bytes()
 }

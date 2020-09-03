@@ -12,7 +12,7 @@ type SetFrequency struct {
 	Frequency float64
 }
 
-func NewSetFrequency(minFrequency, maxFrequency, frequency float64, asicId byte) *SetFrequency {
+func NewSetFrequency(minFrequency, maxFrequency, frequency float64, chipCount int, asicId int) *SetFrequency {
 	sf := &SetFrequency{data: append([]byte{}, setFrequencyMessage...)}
 	if frequency < minFrequency {
 		frequency = minFrequency
@@ -21,12 +21,12 @@ func NewSetFrequency(minFrequency, maxFrequency, frequency float64, asicId byte)
 	}
 	frequency = math.Ceil(100.0*frequency/625.0) * 6.25
 	sf.Frequency = frequency
-	sf.data[2] = asicId
+	sf.data[2] = byte((0x100 / chipCount) * asicId)
 	if frequency < 400 {
-		sf.data[5] = byte(frequency*8) / 25
+		sf.data[5] = byte((frequency * 8) / 25)
 		sf.data[7] = 0x41
 	} else {
-		sf.data[5] = byte(frequency*4) / 25
+		sf.data[5] = byte((frequency * 4) / 25)
 		sf.data[7] = 0x21
 	}
 	utils.BMCRC(sf.data)

@@ -38,7 +38,7 @@ func NewGovernor(cfg *config.Config) *Governor {
 
 func (g *Governor) Start() {
 	g.wg.Add(1)
-	g.DeviceScan()
+	g.DeviceScan(nil)
 	go g.workReceiver()
 	for _, poolCfg := range g.Config.Pools {
 		newPool := stratum.NewPool(poolCfg, g.PoolWork)
@@ -56,12 +56,14 @@ func (g *Governor) Stop() {
 	}
 }
 
-func (g *Governor) DeviceScan() {
+func (g *Governor) DeviceScan(work *stratum.Work) {
 	for _, cg := range g.Catalogs {
 		if controllers, err := cg.FindControllers(g.Context); err == nil {
 			for _, ct := range controllers {
 				if err := ct.Reset(); err != nil {
 					log.Printf("Error resetting %s: %s", ct, err)
+				} else if work != nil {
+					ct.UpdateWork(work)
 				}
 			}
 		}
@@ -79,10 +81,9 @@ func (g *Governor) workReceiver() {
 			g.wg.Done()
 			return
 		case work = <-g.PoolWork:
-			log.Println("Received", work)
 			g.Context.UpdateWork(work)
 		case <-deviceScanTicker.C:
-			g.DeviceScan()
+			g.DeviceScan(work)
 		}
 	}
 }

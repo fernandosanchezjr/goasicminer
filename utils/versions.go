@@ -33,7 +33,7 @@ func (vs *Versions) init() {
 		}
 		versionMask = versionMask >> 1
 	}
-	vs.rolledVersions = []uint32{vs.version}
+	vs.rolledVersions = []uint32{}
 	if vs.bitCount > 0 && vs.versionBits > 0 && vs.bitCount >= vs.versionBits {
 		combinations := combin.Combinations(vs.bitCount, vs.versionBits)
 		totalCombinations := len(combinations)
@@ -54,10 +54,14 @@ func (vs *Versions) Retrieve(dest []uint32) {
 		return
 	}
 	for i := 0; i < destCount; i++ {
-		dest[i] = vs.rolledVersions[vs.pos]
-		vs.pos += 1
-		if vs.pos >= rolledCount {
-			vs.pos = 0
+		if i == 0 {
+			dest[i] = vs.version
+		} else {
+			dest[i] = vs.rolledVersions[vs.pos]
+			vs.pos += 1
+			if vs.pos >= rolledCount {
+				vs.pos = 0
+			}
 		}
 	}
 }

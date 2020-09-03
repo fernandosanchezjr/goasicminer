@@ -42,5 +42,6 @@ func (tr *TaskResult) UpdateHeader() {
 
 func (tr *TaskResult) CalculateHash() [32]byte {
 	tr.UpdateHeader()
-	return utils.DoubleHash(utils.SwapUint32(tr.PlainHeader[:]))
+	utils.SwapUint32(tr.PlainHeader[:])
+	return utils.DoubleHash(tr.PlainHeader[:])
 }

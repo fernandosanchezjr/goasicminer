@@ -29,32 +29,32 @@ const (
 
 type R606Controller struct {
 	base.IController
-	lastReset        time.Time
-	frequency        float64
-	chipCount        int
-	tasks            []*protocol.Task
-	quitMainLoop     chan struct{}
-	quitPrepareLoop  chan struct{}
-	quitVerifyLoop   chan struct{}
-	waiter           sync.WaitGroup
-	prepareQueue     chan *protocol.Task
-	sendQueue        chan *protocol.Task
-	resultsQueue     chan *base.TaskResult
-	verifyQueue      chan *base.TaskResult
-	versions         *utils.Versions
-	currentPoolWork  *stratum.Work
-	currentPoolTask  *stratum.Task
-	taskMtx          sync.Mutex
-	fullscanDuration time.Duration
-	maxTaskWait      time.Duration
-	currentDiff      *big.Int
-	poolDiff         uint32
+	lastReset          time.Time
+	frequency          float64
+	chipCount          int
+	tasks              []*protocol.Task
+	quit               chan struct{}
+	waiter             sync.WaitGroup
+	prepareQueue       chan *protocol.Task
+	sendQueue          chan *protocol.Task
+	expireQueue        chan *protocol.Task
+	verifyPool         chan *base.TaskResult
+	verifyQueue        chan *base.TaskResult
+	versions           *utils.Versions
+	currentPoolWork    *stratum.Work
+	currentPoolTask    *stratum.Task
+	fullscanDuration   time.Duration
+	maxTaskWait        time.Duration
+	currentDiff        *big.Int
+	versionMasks       [4]uint32
+	poolDiff           uint32
+	poolVersion        uint32
+	poolVersionRolling bool
 }
 
 func NewR606Controller(controller base.IController) *R606Controller {
-	rc := &R606Controller{IController: controller, quitMainLoop: make(chan struct{}),
-		quitPrepareLoop: make(chan struct{}), quitVerifyLoop: make(chan struct{}),
-		frequency: R606DefaultFrequency, currentDiff: big.NewInt(0)}
+	rc := &R606Controller{IController: controller, quit: make(chan struct{}), frequency: R606DefaultFrequency,
+		currentDiff: big.NewInt(0)}
 	rc.allocateTasks()
 	return rc
 }
@@ -71,21 +71,13 @@ func (rc *R606Controller) allocateTasks() {
 }
 
 func (rc *R606Controller) Close() {
-	waitForReader := rc.quitMainLoop != nil
-	if rc.quitMainLoop != nil {
-		close(rc.quitMainLoop)
+	waitForLoops := rc.quit != nil
+	if rc.quit != nil {
+		close(rc.quit)
 	}
-	if rc.quitPrepareLoop != nil {
-		close(rc.quitPrepareLoop)
-	}
-	if rc.quitVerifyLoop != nil {
-		close(rc.quitVerifyLoop)
-	}
-	if rc.sendQueue != nil {
-		close(rc.sendQueue)
-	}
-	if waitForReader {
+	if waitForLoops {
 		rc.waiter.Wait()
+		rc.quit = nil
 	}
 	rc.IController.Close()
 }
@@ -109,7 +101,7 @@ func (rc *R606Controller) Reset() error {
 		return err
 	}
 	for i := 0; i < rc.chipCount; i++ {
-		if err := rc.setFrequency(R606DefaultFrequency, byte(i)); err != nil {
+		if err := rc.setFrequency(R606DefaultFrequency, i); err != nil {
 			return err
 		}
 	}
@@ -250,8 +242,8 @@ func (rc *R606Controller) setBaud() error {
 	return nil
 }
 
-func (rc *R606Controller) setFrequency(frequency float64, asicId byte) error {
-	sf := protocol.NewSetFrequency(R606MinFrequency, R606MaxFrequency, frequency, asicId)
+func (rc *R606Controller) setFrequency(frequency float64, asicId int) error {
+	sf := protocol.NewSetFrequency(R606MinFrequency, R606MaxFrequency, frequency, rc.chipCount, asicId)
 	if sf.Frequency != rc.frequency {
 		if data, err := sf.MarshalBinary(); err != nil {
 			return err
@@ -259,7 +251,10 @@ func (rc *R606Controller) setFrequency(frequency float64, asicId byte) error {
 			if err := rc.Write(data); err != nil {
 				return err
 			}
-			rc.setTiming()
+			buf := bytes.NewBuffer(make([]byte, 0, 2048))
+			if err := rc.ReadTimeout(buf, 10*time.Millisecond); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -284,86 +279,80 @@ func (rc *R606Controller) setTiming() {
 }
 
 func (rc *R606Controller) initializeTasks() error {
-	rc.sendQueue = make(chan *protocol.Task, R606MaxJobId)
-	rc.prepareQueue = make(chan *protocol.Task, R606MaxJobId)
-	rc.resultsQueue = make(chan *base.TaskResult, R606MaxVerifyTasks)
+	rc.sendQueue = make(chan *protocol.Task, R606MaxJobId+1)
+	rc.expireQueue = make(chan *protocol.Task, R606MaxJobId+1)
+	rc.prepareQueue = make(chan *protocol.Task, R606MaxJobId+1)
+	rc.verifyPool = make(chan *base.TaskResult, R606MaxVerifyTasks)
 	rc.verifyQueue = make(chan *base.TaskResult, R606MaxVerifyTasks)
 	for i := 0; i < R606MaxVerifyTasks; i++ {
-		rc.resultsQueue <- base.NewTaskResult()
+		rc.verifyPool <- base.NewTaskResult()
 	}
-	rc.waiter.Add(3)
+	rc.waiter.Add(5)
 	go rc.prepareLoop()
 	go rc.verifyLoop()
-	go rc.mainLoop()
+	go rc.readLoop()
+	go rc.writeLoop()
+	go rc.expireLoop()
 	return nil
-}
-
-func (rc *R606Controller) startWork() {
-	for _, task := range rc.tasks {
-		rc.sendQueue <- task
-	}
-}
-
-func (rc *R606Controller) setupWork(work *stratum.Work) {
-	rc.versions = utils.NewVersions(work.Version, work.VersionRollingMask, R606MidstateCount)
-	rc.taskMtx.Lock()
-	defer rc.taskMtx.Unlock()
-	started := rc.currentPoolWork != nil
-	rc.currentPoolWork = work
-	rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, false, rc.versions)
-	utils.CalculateDifficulty(big.NewInt(int64(work.Difficulty)), rc.currentDiff)
-	if !started {
-		go rc.startWork()
-	}
 }
 
 func (rc *R606Controller) prepareLoop() {
 	var task *protocol.Task
+	var work *stratum.Work
+	workChan := rc.WorkChannel()
+	var started bool
 	for {
 		select {
-		case <-rc.quitPrepareLoop:
+		case <-rc.quit:
 			rc.waiter.Done()
-			rc.quitVerifyLoop = nil
 			return
 		case task = <-rc.prepareQueue:
 			if task.Index()%R606MidstateCount != 0 {
 				continue
 			}
-			rc.taskMtx.Lock()
 			rc.currentPoolWork.SetExtraNonce2(rc.currentPoolWork.ExtraNonce2 + 1)
-			rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true, rc.versions)
+			rc.currentPoolTask = stratum.NewTask(rc.currentPoolWork, R606MidstateCount, true,
+				rc.versionMasks[:])
 			task.Update(rc.currentPoolTask)
-			rc.taskMtx.Unlock()
 			rc.sendQueue <- task
+		case work = <-workChan:
+			if rc.versions == nil {
+				rc.versions = utils.NewVersions(work.Version, work.VersionRollingMask, R606MidstateCount)
+			}
+			rc.versions.Retrieve(rc.versionMasks[:])
+			rc.currentPoolWork = work
+			rc.poolVersion = work.Version
+			rc.poolVersionRolling = work.VersionRolling
+			utils.CalculateDifficulty(big.NewInt(int64(work.Difficulty)), rc.currentDiff)
+			if !started {
+				started = true
+				for _, task := range rc.tasks {
+					rc.sendQueue <- task
+				}
+			}
 		}
 	}
 }
 
-func (rc *R606Controller) mainLoop() {
+func (rc *R606Controller) readLoop() {
 	var midstate, index int
-	var work *stratum.Work
-	var currentTask *protocol.Task
-	var ok bool
-	buf := bytes.NewBuffer(make([]byte, 0, 512))
+	buf := bytes.NewBuffer(make([]byte, 0, 2048))
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	rb := protocol.NewResponseBlock()
-	readTicker := time.NewTicker(2 * time.Millisecond)
-	writeTicker := time.NewTicker(rc.fullscanDuration)
-	expireTicker := time.NewTicker(rc.maxTaskWait)
-	expireChan := make(chan *protocol.Task, R606MaxJobId)
-	workChan := rc.WorkChannel()
+	mainTicker := time.NewTicker(time.Millisecond)
 	for {
 		select {
-		case <-rc.quitMainLoop:
-			readTicker.Stop()
-			writeTicker.Stop()
-			expireTicker.Stop()
+		case <-rc.quit:
+			mainTicker.Stop()
 			rc.waiter.Done()
-			rc.quitMainLoop = nil
 			return
-		case <-readTicker.C:
+		case <-mainTicker.C:
 			buf.Reset()
+			if len(rb.ExtraData) > 0 {
+				buf.Write(rb.ExtraData)
+				rb.ExtraData = nil
+			}
 			rb.Count = 0
 			if err := rc.ReadTimeout(buf, time.Millisecond); err != nil {
 				log.Println("Error reading response block:", err)
@@ -389,42 +378,62 @@ func (rc *R606Controller) mainLoop() {
 				if index > R606MaxJobId || index < 0 {
 					continue
 				}
-				nextResult = <-rc.resultsQueue
+				nextResult = <-rc.verifyPool
 				rc.tasks[index].UpdateResult(nextResult, taskResponse.Nonce, midstate)
 				rc.verifyQueue <- nextResult
 			}
-		case <-writeTicker.C:
+		}
+	}
+}
+
+func (rc *R606Controller) writeLoop() {
+	var currentTask *protocol.Task
+	mainTicker := time.NewTicker(rc.fullscanDuration)
+	for {
+		select {
+		case <-rc.quit:
+			mainTicker.Stop()
+			rc.waiter.Done()
+			return
+		case <-mainTicker.C:
 			select {
-			case currentTask, ok = <-rc.sendQueue:
-				if ok {
-					if data, err := currentTask.MarshalBinary(); err != nil {
-						panic(err)
-					} else {
-						if err = rc.Write(data); err != nil {
-							log.Println("USB write error:", err)
-							rc.waiter.Done()
-							go rc.Exit()
-							return
-						}
-					}
-					if currentTask.IsBusyWork() {
-						rc.prepareQueue <- currentTask
-					} else {
-						expireChan <- currentTask
+			case currentTask = <-rc.sendQueue:
+				if data, err := currentTask.MarshalBinary(); err != nil {
+					panic(err)
+				} else {
+					if err = rc.Write(data); err != nil {
+						log.Println("USB write error:", err)
+						rc.waiter.Done()
+						go rc.Exit()
+						return
 					}
 				}
-			default:
+				if currentTask.IsBusyWork() {
+					rc.prepareQueue <- currentTask
+				} else {
+					rc.expireQueue <- currentTask
+				}
 			}
+		default:
+		}
+	}
+}
+
+func (rc *R606Controller) expireLoop() {
+	var currentTask *protocol.Task
+	expireTicker := time.NewTicker(rc.maxTaskWait)
+	for {
+		select {
+		case <-rc.quit:
+			expireTicker.Stop()
+			rc.waiter.Done()
+			return
 		case <-expireTicker.C:
 			select {
-			case currentTask, ok = <-expireChan:
-				if ok {
-					rc.prepareQueue <- currentTask
-				}
+			case currentTask = <-rc.expireQueue:
+				rc.prepareQueue <- currentTask
 			default:
 			}
-		case work = <-workChan:
-			rc.setupWork(work)
 		}
 	}
 }
@@ -435,46 +444,35 @@ func (rc *R606Controller) verifyLoop() {
 	var diff utils.Difficulty
 	var hashBig big.Int
 	var match bool
-	var matches, nonMatches uint64
 	var submitVersion uint32
 	for {
 		select {
-		case <-rc.quitVerifyLoop:
+		case <-rc.quit:
 			rc.waiter.Done()
-			rc.quitVerifyLoop = nil
 			return
 		case verifyTask = <-rc.verifyQueue:
 			hash := verifyTask.CalculateHash()
 			if hash[31] == 0 && hash[30] == 0 && hash[29] == 0 && hash[28] == 0 {
-				matches += 1
 				utils.HashToBig(hash, &hashBig)
 				match = hashBig.Cmp(rc.currentDiff) <= 0
 				if match {
 					utils.CalculateDifficulty(&hashBig, &resultDiff)
 					diff = utils.Difficulty(resultDiff.Int64())
-					rc.taskMtx.Lock()
-					if rc.currentPoolWork.VersionRolling {
-						submitVersion = verifyTask.Version & ^rc.currentPoolWork.Version
+					if rc.poolVersionRolling {
+						submitVersion = verifyTask.Version & ^rc.poolVersion
 					} else {
 						submitVersion = 0
 					}
-					rc.taskMtx.Unlock()
 					rc.currentPoolWork.Pool.SubmitChan <- protocol2.NewSubmit(
 						verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
 					)
-					log.Printf("Extra nonce2 %016x nonce %08x version %08x diff %s",
-						verifyTask.ExtraNonce2, verifyTask.Nonce, verifyTask.Version, diff)
-				} else {
-					if matches%0xff == 0 {
-						log.Println(matches, "matches,", nonMatches, "non-matches")
-					}
+					log.Printf("Extra nonce2 %016x ntime %08x nonce %08x version %08x diff %s",
+						verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, verifyTask.Version, diff)
 				}
-			} else {
-				nonMatches += 1
 			}
 			//log.Printf("Received nonce %02x, version %02x, ntime %02x, extraNonce %x for job id %s",
 			//	verifyTask.Nonce, verifyTask.Version, verifyTask.NTime, verifyTask.ExtraNonce2, verifyTask.JobId)
-			rc.resultsQueue <- verifyTask
+			rc.verifyPool <- verifyTask
 		}
 	}
 }

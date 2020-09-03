@@ -6,6 +6,7 @@ const (
 
 type ResponseBlock struct {
 	Responses []*TaskResponse
+	ExtraData []byte
 	Count     int
 }
 
@@ -28,6 +29,7 @@ func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
 			data = data[7:]
 			pos++
 		} else {
+			rb.ExtraData = data
 			break
 		}
 	}

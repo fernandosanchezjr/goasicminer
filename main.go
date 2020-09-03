@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 )
 
 var exitchannel = make(chan os.Signal, 1)
@@ -21,6 +22,7 @@ func wait() {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	flag.Parse()
 	cfg, err := config.LoadConfig()
 	if err != nil {
