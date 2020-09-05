@@ -8,22 +8,37 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 )
 
-var exitchannel = make(chan os.Signal, 1)
+var cpuProfile bool
+var exitChannel chan os.Signal
+
+func init() {
+	flag.BoolVar(&cpuProfile, "cpu-profile", cpuProfile, "enable cpu profiling")
+	exitChannel = make(chan os.Signal, 1)
+}
 
 func wait() {
-	signal.Notify(exitchannel, os.Interrupt)
-	signal.Notify(exitchannel, os.Kill)
+	signal.Notify(exitChannel, os.Interrupt)
+	signal.Notify(exitChannel, os.Kill)
 	select {
-	case <-exitchannel:
+	case <-exitChannel:
 		return
 	}
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	flag.Parse()
+	if cpuProfile {
+		f, err := os.Create("goasicminer.prof")
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
