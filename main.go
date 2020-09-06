@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"runtime/pprof"
 )
 
@@ -35,10 +34,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		pprof.StartCPUProfile(f)
+		if err = pprof.StartCPUProfile(f); err != nil {
+			panic(err)
+		}
 		defer pprof.StopCPUProfile()
 	}
-	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
