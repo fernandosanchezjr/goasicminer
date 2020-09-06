@@ -300,8 +300,6 @@ func (rc *R606Controller) setTiming() {
 	if rc.maxTaskWait > maxTaskWait {
 		rc.maxTaskWait = maxTaskWait
 	}
-	//rc.fullscanDuration = time.Duration(rc.fullscanDuration.Milliseconds()) * time.Millisecond
-	//rc.maxTaskWait = time.Duration(rc.maxTaskWait.Milliseconds()) * time.Millisecond
 	log.Println("Hashrate", utils.HashRate(hashRate))
 	log.Println("Full scan time:", rc.fullscanDuration)
 	log.Println("Max task wait:", rc.maxTaskWait)

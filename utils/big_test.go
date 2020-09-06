@@ -13,6 +13,4 @@ func Test_DifficultyAssumptions(t *testing.T) {
 	log.Printf("%x", pdiff.Bytes())
 	log.Printf("%d", pdiff.Int64())
 	log.Printf("%d", pdiff.Uint64())
-	//000000000007fff8000000000000000000000000000000000000000000000000
-	//000000000007fff8000000000000000000000000000000000000000000000000
 }

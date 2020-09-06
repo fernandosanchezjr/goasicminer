@@ -25,7 +25,7 @@ func getOrCreateConfigFolder() string {
 	}
 	configFolder := path.Join(home, ".goasicminer")
 	if err := os.MkdirAll(configFolder, 0700); err != nil {
-		log.Println("Could ot create", configFolder)
+		log.Println("Could not create", configFolder)
 		return ""
 	}
 	return configFolder

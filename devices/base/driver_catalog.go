@@ -52,29 +52,31 @@ func (dc *DriverCatalog) String() string {
 
 func (dc *DriverCatalog) FindControllers(context *Context) ([]IController, error) {
 	var result []IController
-	if devices, err := context.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+	var devices []*gousb.Device
+	var driver IDriver
+	var err error
+	if devices, err = context.OpenDevices(func(desc *gousb.DeviceDesc) bool {
 		return dc.MatchesPidVid(desc)
 	}); err != nil {
 		return nil, err
-	} else {
-		for _, d := range devices {
-			if driver, err := dc.MatchesDevice(d); err != nil {
-				return nil, err
-			} else if driver != nil {
-				in, out := driver.EndpointNumbers()
-				controller := driver.NewController(context, driver, d, in, out)
-				if !context.InUse(controller) {
-					if err := controller.Initialize(); err != nil {
-						controller.Close()
-						return nil, err
-					}
-					context.Register(controller)
-					result = append(result, controller)
-				}
-			} else {
-				if err := d.Close(); err != nil {
+	}
+	for _, d := range devices {
+		if driver, err = dc.MatchesDevice(d); err != nil {
+			return nil, err
+		} else if driver != nil {
+			in, out := driver.EndpointNumbers()
+			controller := driver.NewController(context, driver, d, in, out)
+			if !context.InUse(controller) {
+				if err = controller.Initialize(); err != nil {
+					controller.Close()
 					return nil, err
 				}
+				context.Register(controller)
+				result = append(result, controller)
+			}
+		} else {
+			if err = d.Close(); err != nil {
+				return nil, err
 			}
 		}
 	}
