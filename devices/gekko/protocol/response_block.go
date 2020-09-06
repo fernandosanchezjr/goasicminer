@@ -1,7 +1,7 @@
 package protocol
 
 const (
-	MaxTaskResponses = 64
+	MaxTaskResponses = 0x7f
 )
 
 type ResponseBlock struct {

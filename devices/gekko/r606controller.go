@@ -50,6 +50,7 @@ type R606Controller struct {
 	poolDiff           uint32
 	poolVersion        uint32
 	poolVersionRolling bool
+	shuttingDown       bool
 }
 
 func NewR606Controller(controller base.IController) *R606Controller {
@@ -71,6 +72,7 @@ func (rc *R606Controller) allocateTasks() {
 }
 
 func (rc *R606Controller) Close() {
+	rc.shuttingDown = true
 	waitForLoops := rc.quit != nil
 	if rc.quit != nil {
 		close(rc.quit)
@@ -278,7 +280,7 @@ func (rc *R606Controller) setChipFrequency(frequency float64, chipId int) error 
 			return err
 		}
 		buf := bytes.NewBuffer(make([]byte, 0, 2048))
-		if err := rc.ReadTimeout(buf, 10*time.Millisecond); err != nil {
+		if err := rc.ReadTimeout(buf, 50*time.Millisecond); err != nil {
 			return err
 		}
 	}
@@ -298,6 +300,8 @@ func (rc *R606Controller) setTiming() {
 	if rc.maxTaskWait > maxTaskWait {
 		rc.maxTaskWait = maxTaskWait
 	}
+	//rc.fullscanDuration = time.Duration(rc.fullscanDuration.Milliseconds()) * time.Millisecond
+	//rc.maxTaskWait = time.Duration(rc.maxTaskWait.Milliseconds()) * time.Millisecond
 	log.Println("Hashrate", utils.HashRate(hashRate))
 	log.Println("Full scan time:", rc.fullscanDuration)
 	log.Println("Max task wait:", rc.maxTaskWait)
@@ -315,9 +319,9 @@ func (rc *R606Controller) initializeTasks() error {
 	rc.waiter.Add(5)
 	go rc.prepareLoop()
 	go rc.verifyLoop()
+	go rc.expireLoop()
 	go rc.readLoop()
 	go rc.writeLoop()
-	go rc.expireLoop()
 	return nil
 }
 
@@ -325,19 +329,24 @@ func (rc *R606Controller) loopRecover(loopName string) {
 	if err := recover(); err != nil {
 		log.Printf("Error in %s loop: %s", loopName, err)
 		rc.waiter.Done()
+		if !rc.shuttingDown {
+			go rc.Exit()
+		}
 	}
 }
 
 func (rc *R606Controller) prepareLoop() {
 	defer rc.loopRecover("prepare")
 	var ok bool
+	var started bool
 	var task *protocol.Task
 	var work *stratum.Work
 	workChan := rc.WorkChannel()
-	var started bool
+	versionTicker := time.NewTicker(30 * time.Second)
 	for {
 		select {
 		case <-rc.quit:
+			versionTicker.Stop()
 			rc.waiter.Done()
 			return
 		case task, ok = <-rc.prepareQueue:
@@ -355,8 +364,8 @@ func (rc *R606Controller) prepareLoop() {
 		case work = <-workChan:
 			if rc.versions == nil {
 				rc.versions = utils.NewVersions(work.Version, work.VersionRollingMask, R606MidstateCount)
+				rc.versions.Retrieve(rc.versionMasks[:])
 			}
-			rc.versions.Retrieve(rc.versionMasks[:])
 			rc.currentPoolWork = work
 			rc.poolVersion = work.Version
 			rc.poolVersionRolling = work.VersionRolling
@@ -367,12 +376,17 @@ func (rc *R606Controller) prepareLoop() {
 					rc.sendQueue <- task
 				}
 			}
+		case <-versionTicker.C:
+			if rc.versions != nil {
+				rc.versions.Retrieve(rc.versionMasks[:])
+			}
 		}
 	}
 }
 
 func (rc *R606Controller) readLoop() {
 	defer rc.loopRecover("read")
+	var missingLoops uint32 = 0
 	var midstate, index int
 	buf := bytes.NewBuffer(make([]byte, 0, 2048))
 	var nextResult *base.TaskResult
@@ -402,23 +416,37 @@ func (rc *R606Controller) readLoop() {
 				log.Println("Error decoding response block:", err)
 				continue
 			}
-			for i := 0; i < rb.Count; i++ {
-				taskResponse = rb.Responses[i]
-				if taskResponse.BusyResponse() {
+			if rb.Count > 0 {
+				missingLoops = 0
+				if rb.Count >= len(rb.Responses) {
+					rb.ExtraData = nil
 					continue
 				}
-				midstate = taskResponse.JobId % R606MidstateCount
-				if midstate != 0 {
-					index = taskResponse.JobId - midstate
-				} else {
-					index = taskResponse.JobId
+				for i := 0; i < rb.Count; i++ {
+					taskResponse = rb.Responses[i]
+					if taskResponse.BusyResponse() {
+						continue
+					}
+					midstate = taskResponse.JobId % R606MidstateCount
+					if midstate != 0 {
+						index = taskResponse.JobId - midstate
+					} else {
+						index = taskResponse.JobId
+					}
+					if index > R606MaxJobId || index < 0 {
+						continue
+					}
+					nextResult = <-rc.verifyPool
+					rc.tasks[index].UpdateResult(nextResult, taskResponse.Nonce, midstate)
+					rc.verifyQueue <- nextResult
 				}
-				if index > R606MaxJobId || index < 0 {
-					continue
+			} else {
+				missingLoops += 1
+				if missingLoops >= 5000 {
+					rc.waiter.Done()
+					go rc.Exit()
+					return
 				}
-				nextResult = <-rc.verifyPool
-				rc.tasks[index].UpdateResult(nextResult, taskResponse.Nonce, midstate)
-				rc.verifyQueue <- nextResult
 			}
 		}
 	}
@@ -490,6 +518,7 @@ func (rc *R606Controller) verifyLoop() {
 	var hashBig big.Int
 	var match bool
 	var submitVersion uint32
+	var maxDiff utils.Difficulty
 	for {
 		select {
 		case <-rc.quit:
@@ -517,6 +546,10 @@ func (rc *R606Controller) verifyLoop() {
 					log.Printf("Job id %s extra nonce2 %016x ntime %08x nonce %08x version %08x diff %s",
 						verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce,
 						verifyTask.Version, diff)
+					if diff > maxDiff {
+						maxDiff = diff
+						log.Println("Best share:", maxDiff)
+					}
 				}
 			}
 			rc.verifyPool <- verifyTask
