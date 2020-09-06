@@ -1,9 +1,8 @@
 package base
 
 import (
-	"crypto/rand"
-	"encoding/binary"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"github.com/fernandosanchezjr/gousb"
 	"log"
 	"sync"
@@ -85,10 +84,8 @@ func (c *Context) GetControllers(driver IDriver) []IController {
 func (c *Context) UpdateWork(work *stratum.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	var randomBytes [8]byte
 	for _, ct := range c.controllers {
-		_, _ = rand.Read(randomBytes[:])
-		work.ExtraNonce2 = binary.LittleEndian.Uint64(randomBytes[:])
+		work.ExtraNonce2 = utils.Random(8.0)
 		ct.UpdateWork(work.Clone())
 	}
 }
