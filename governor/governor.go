@@ -72,7 +72,7 @@ func (g *Governor) DeviceScan(work *stratum.Work) {
 
 func (g *Governor) workReceiver() {
 	var work *stratum.Work
-	deviceScanTicker := time.NewTicker(30 * time.Second)
+	deviceScanTicker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-g.workQuit:
