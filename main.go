@@ -28,6 +28,7 @@ func wait() {
 }
 
 func main() {
+	log.SetFlags(log.Lmicroseconds)
 	flag.Parse()
 	if cpuProfile {
 		f, err := os.Create("goasicminer.prof")

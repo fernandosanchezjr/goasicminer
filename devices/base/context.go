@@ -85,7 +85,7 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
 	for _, ct := range c.controllers {
-		work.ExtraNonce2 = utils.Random(8.0)
+		work.ExtraNonce2 = utils.Random(16.0)
 		ct.UpdateWork(work.Clone())
 	}
 }

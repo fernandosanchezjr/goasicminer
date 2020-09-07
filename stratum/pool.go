@@ -41,6 +41,7 @@ type Pool struct {
 	configuration   *protocol.ConfigureResponse
 	workChan        PoolWorkChan
 	SubmitChan      chan *protocol.Submit
+	mtx             sync.Mutex
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -144,6 +145,8 @@ func (p *Pool) handleDisconnected() {
 }
 
 func (p *Pool) handleConnected() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	log.Println("Connected to", p)
 	subscribe := protocol.NewSubscribe()
 	if err := p.conn.Call(subscribe); err != nil {
@@ -178,6 +181,8 @@ func (p *Pool) receiveReply() {
 }
 
 func (p *Pool) handleSubscribed() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	log.Println("Subscribed to", p)
 	configure := protocol.NewConfigure()
 	if err := p.conn.Call(configure); err != nil {
@@ -191,6 +196,8 @@ func (p *Pool) handleSubscribed() {
 }
 
 func (p *Pool) handleConfigured() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
 	if err := p.conn.Call(authorize); err != nil {
 		log.Println("Pool", p, "authorization error:", err)
@@ -203,6 +210,8 @@ func (p *Pool) handleConfigured() {
 }
 
 func (p *Pool) handleSubmit(submit *protocol.Submit) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	submit.Params[0] = p.config.User
 	if p.notify.JobId != submit.Params[1] {
 		return
@@ -217,6 +226,8 @@ func (p *Pool) handleSubmit(submit *protocol.Submit) {
 }
 
 func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 	method, ok := p.pendingCommands[reply.Id]
 	if !ok {
 		log.Println("Pool", p, "received unknown reply:", reply)

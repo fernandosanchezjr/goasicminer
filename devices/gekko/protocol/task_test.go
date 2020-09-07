@@ -17,7 +17,8 @@ func TestTask_UpdateBusy(t *testing.T) {
 	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
-	pt := stratum.NewTask(pw, 4, true, versionMasks[:])
+	pt := stratum.NewTask(4, true)
+	pt.Update(pw, versionMasks[:])
 	task := NewTask(0x75, 1)
 	task.Update(pt)
 	data, _ := task.MarshalBinary()
@@ -36,7 +37,8 @@ func TestTask_TestEncoded(t *testing.T) {
 	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
-	pt := stratum.NewTask(pw, 1, true, versionMasks[:])
+	pt := stratum.NewTask(1, true)
+	pt.Update(pw, versionMasks[:])
 	task := NewTask(0x74, 1)
 	task.Update(pt)
 	data, _ := task.MarshalBinary()
@@ -54,7 +56,8 @@ func BenchmarkTask_Update(b *testing.B) {
 	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
-	pt := stratum.NewTask(pw, 4, true, versionMasks[:])
+	pt := stratum.NewTask(4, true)
+	pt.Update(pw, versionMasks[:])
 	task := NewTask(0x75, 4)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
@@ -72,7 +75,8 @@ func TestTask_Result(t *testing.T) {
 	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
-	pt := stratum.NewTask(pw, 1, true, versionMasks[:])
+	pt := stratum.NewTask(1, true)
+	pt.Update(pw, versionMasks[:])
 	pt.NTime = 0x5f2606b4
 	task := NewTask(0x75, 1)
 	task.Update(pt)
