@@ -348,7 +348,7 @@ func (p *Pool) processWork() {
 		reloadVersions = true
 	}
 	if reloadVersions {
-		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 4)
+		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 2, 8)
 	}
 	work.VersionsSource = p.versions
 	p.workChan <- work

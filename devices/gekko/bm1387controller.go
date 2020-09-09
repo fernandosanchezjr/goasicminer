@@ -484,7 +484,7 @@ func (bm *BM1387Controller) verifyLoop() {
 						verifyTask.Version, diff)
 					if diff > maxDiff {
 						maxDiff = diff
-						log.Println("Best share:", maxDiff)
+						log.Printf("%s best share: %s", bm, maxDiff)
 					}
 				}
 			}

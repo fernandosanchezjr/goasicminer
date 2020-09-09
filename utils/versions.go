@@ -8,15 +8,17 @@ import (
 type Versions struct {
 	Version        uint32
 	Mask           uint32
-	versionBits    int
+	minVersionBits int
+	maxVersionBits int
 	bitCount       int
-	rolledVersions []uint32
+	RolledVersions []uint32
 	pos            int
 }
 
-func NewVersions(version uint32, mask uint32, versionBits int) *Versions {
+func NewVersions(version uint32, mask uint32, minVersionBits int, maxVersionBits int) *Versions {
 	bitCount := bits.OnesCount32(mask)
-	vs := &Versions{Version: version, Mask: mask, bitCount: bitCount, versionBits: versionBits}
+	vs := &Versions{Version: version, Mask: mask, bitCount: bitCount, minVersionBits: minVersionBits,
+		maxVersionBits: maxVersionBits}
 	vs.init()
 	return vs
 }
@@ -33,23 +35,26 @@ func (vs *Versions) init() {
 		}
 		versionMask = versionMask >> 1
 	}
-	vs.rolledVersions = []uint32{}
-	if vs.bitCount > 0 && vs.versionBits > 0 && vs.bitCount >= vs.versionBits {
-		combinations := combin.Combinations(vs.bitCount, vs.versionBits)
-		totalCombinations := len(combinations)
-		for i := 0; i < totalCombinations; i++ {
-			tmpMask = 0x0
-			for j := 0; j < len(combinations[i]); j++ {
-				tmpMask = tmpMask | 1<<bitPositions[combinations[i][j]]
+	vs.RolledVersions = []uint32{}
+	if vs.bitCount > 0 && vs.minVersionBits > 0 && vs.maxVersionBits > vs.minVersionBits &&
+		vs.bitCount >= vs.minVersionBits && vs.bitCount > vs.maxVersionBits {
+		for i := vs.minVersionBits; i < vs.maxVersionBits+1; i++ {
+			combinations := combin.Combinations(vs.bitCount, i)
+			totalCombinations := len(combinations)
+			for i := 0; i < totalCombinations; i++ {
+				tmpMask = 0x0
+				for j := 0; j < len(combinations[i]); j++ {
+					tmpMask = tmpMask | 1<<bitPositions[combinations[i][j]]
+				}
+				vs.RolledVersions = append(vs.RolledVersions, vs.Version|tmpMask)
 			}
-			vs.rolledVersions = append(vs.rolledVersions, vs.Version|tmpMask)
 		}
 	}
 }
 
 func (vs *Versions) Retrieve(dest []uint32) {
 	destCount := len(dest)
-	rolledCount := len(vs.rolledVersions)
+	rolledCount := len(vs.RolledVersions)
 	if destCount == 0 {
 		return
 	}
@@ -57,7 +62,7 @@ func (vs *Versions) Retrieve(dest []uint32) {
 		if i == 0 {
 			dest[i] = vs.Version
 		} else {
-			dest[i] = vs.rolledVersions[vs.pos]
+			dest[i] = vs.RolledVersions[vs.pos]
 			vs.pos += 1
 			if vs.pos >= rolledCount {
 				vs.pos = 0
