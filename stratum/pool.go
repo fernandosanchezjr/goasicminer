@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"io"
 	"log"
 	"net"
@@ -42,6 +43,7 @@ type Pool struct {
 	workChan        PoolWorkChan
 	SubmitChan      chan *protocol.Submit
 	mtx             sync.Mutex
+	versions        *utils.Versions
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -337,6 +339,17 @@ func (p *Pool) processWork() {
 	if p.notify == nil {
 		return
 	}
+	var reloadVersions bool
 	defer p.sendRecovery()
-	p.workChan <- NewWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
+	work := NewWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
+	if p.versions == nil {
+		reloadVersions = true
+	} else if p.versions.Version != work.Version || p.versions.Mask != work.VersionRollingMask {
+		reloadVersions = true
+	}
+	if reloadVersions {
+		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 4)
+	}
+	work.VersionsSource = p.versions
+	p.workChan <- work
 }

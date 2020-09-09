@@ -8,27 +8,7 @@ import (
 	"testing"
 )
 
-func TestTask_UpdateBusy(t *testing.T) {
-	pw, err := stratum.UnmarshalTestWork()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pw.SetExtraNonce2(5)
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
-	var versionMasks [4]uint32
-	versions.Retrieve(versionMasks[:])
-	pt := stratum.NewTask(4, true)
-	pt.Update(pw, versionMasks[:])
-	task := NewTask(0x75, 1)
-	task.Update(pt)
-	data, _ := task.MarshalBinary()
-	hexData := hex.EncodeToString(data)
-	if hexData != "2136750180ff7f1bea07101775424c5f8b4382dcf25f41a9e5fcee0f708cb3f1de287b3e1e78a58eb128539f8e1b866a2393d62ee0e2" {
-		t.Fatal(hexData)
-	}
-}
-
-func TestTask_TestEncoded(t *testing.T) {
+func TestTask_TestEncodeNoBoost(t *testing.T) {
 	pw, err := stratum.UnmarshalTestWork()
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +24,26 @@ func TestTask_TestEncoded(t *testing.T) {
 	data, _ := task.MarshalBinary()
 	hexData := hex.EncodeToString(data)
 	if hexData != "2136740180ff7f1bea07101775424c5f69aa3fa0e3ff3bf3977a3140423c727f895210de0c6e467e18269b6d1936c98fd8ede8c41970" {
+		t.Fatal(hexData)
+	}
+}
+
+func TestTask_TestEncodeBoost(t *testing.T) {
+	pw, err := stratum.UnmarshalTestWork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pw.SetExtraNonce2(4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	var versionMasks [4]uint32
+	versions.Retrieve(versionMasks[:])
+	pt := stratum.NewTask(4, true)
+	pt.Update(pw, versionMasks[:])
+	task := NewTask(0x74, 4)
+	task.Update(pt)
+	data, _ := task.MarshalBinary()
+	hexData := hex.EncodeToString(data)
+	if hexData != "2196740480ff7f1bea07101775424c5f69aa3fa0e3ff3bf3977a3140423c727f895210de0c6e467e18269b6d1936c98fd8ede8c4e1ce4216a7de12fb74e694416ba7b3ed12ea12b56bbbac1fa7d97d1ee2367ee3b01463e804106098afdb3734b57f7d72b47001b5fce77421f8c1b0ad71201c0ce1caa78738d0fbbc3f2e01e09bd2c1a5de05c902a909acdd94c6b29fbded9d007caf" {
 		t.Fatal(hexData)
 	}
 }

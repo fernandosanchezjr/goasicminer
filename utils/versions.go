@@ -6,8 +6,8 @@ import (
 )
 
 type Versions struct {
-	version        uint32
-	mask           uint32
+	Version        uint32
+	Mask           uint32
 	versionBits    int
 	bitCount       int
 	rolledVersions []uint32
@@ -16,14 +16,14 @@ type Versions struct {
 
 func NewVersions(version uint32, mask uint32, versionBits int) *Versions {
 	bitCount := bits.OnesCount32(mask)
-	vs := &Versions{version: version, mask: mask, bitCount: bitCount, versionBits: versionBits}
+	vs := &Versions{Version: version, Mask: mask, bitCount: bitCount, versionBits: versionBits}
 	vs.init()
 	return vs
 }
 
 func (vs *Versions) init() {
 	var tmpMask uint32
-	versionMask := vs.mask
+	versionMask := vs.Mask
 	bitPositions := make([]int, vs.bitCount)
 	pos := 0
 	for i := 0; i < 32; i++ {
@@ -42,7 +42,7 @@ func (vs *Versions) init() {
 			for j := 0; j < len(combinations[i]); j++ {
 				tmpMask = tmpMask | 1<<bitPositions[combinations[i][j]]
 			}
-			vs.rolledVersions = append(vs.rolledVersions, vs.version|tmpMask)
+			vs.rolledVersions = append(vs.rolledVersions, vs.Version|tmpMask)
 		}
 	}
 }
@@ -55,7 +55,7 @@ func (vs *Versions) Retrieve(dest []uint32) {
 	}
 	for i := 0; i < destCount; i++ {
 		if i == 0 {
-			dest[i] = vs.version
+			dest[i] = vs.Version
 		} else {
 			dest[i] = vs.rolledVersions[vs.pos]
 			vs.pos += 1

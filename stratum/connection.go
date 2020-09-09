@@ -93,8 +93,8 @@ func (c *Connection) Call(command protocol.IMethod) error {
 }
 
 func (c *Connection) replyLoop() {
+	r := &protocol.Reply{}
 	for {
-		r := &protocol.Reply{}
 		if err := c.reader.Decode(&r); err != nil {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return
@@ -106,6 +106,7 @@ func (c *Connection) replyLoop() {
 				c.logRPC("RPC in:", r)
 			}
 			c.replyChan <- r
+			r = &protocol.Reply{}
 		}
 	}
 }

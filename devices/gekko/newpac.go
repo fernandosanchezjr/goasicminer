@@ -5,18 +5,18 @@ import (
 	"github.com/fernandosanchezjr/gousb"
 )
 
-type R606 struct {
+type NewPac struct {
 	base.IDriver
 }
 
-func NewR606() *R606 {
-	return &R606{
+func NewNewPac() *NewPac {
+	return &NewPac{
 		IDriver: base.NewDriver(0x6015, 0x0403, "GekkoScience",
-			"R606 Bitcoin Miner", 1, 2),
+			"NewPac Bitcoin Miner", 1, 2),
 	}
 }
 
-func (r606 *R606) NewController(
+func (np *NewPac) NewController(
 	context *base.Context,
 	_ base.IDriver,
 	device *gousb.Device,
@@ -24,7 +24,7 @@ func (r606 *R606) NewController(
 	outEndpoint int,
 ) base.IController {
 	return NewBM1387Controller(
-		r606.IDriver.NewController(context, r606, device, inEndpoint, outEndpoint),
-		200, 1200, 900, 12,
+		np.IDriver.NewController(context, np, device, inEndpoint, outEndpoint),
+		100, 700, 500, 2,
 	)
 }

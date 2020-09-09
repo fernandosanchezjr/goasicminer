@@ -28,6 +28,7 @@ type Work struct {
 	Pool               *Pool
 	plainHeader        [80]byte
 	headerBuf          *bytes.Buffer
+	VersionsSource     *utils.Versions
 }
 
 type PoolWorkChan chan *Work

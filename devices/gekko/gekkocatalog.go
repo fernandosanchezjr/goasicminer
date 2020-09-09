@@ -8,6 +8,6 @@ type GekkoCatalog struct {
 
 func NewGekkoCatalog() *GekkoCatalog {
 	return &GekkoCatalog{
-		base.NewDriverCatalog("GekkoScience", NewR606()),
+		base.NewDriverCatalog("GekkoScience", NewR606(), NewNewPac()),
 	}
 }
