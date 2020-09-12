@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	BM1387BaudDiv        = 1
-	BM1387NumCores       = 114
-	BM1387MaxJobId       = 0x7f
-	BM1387MidstateCount  = 4
-	BM1387MaxVerifyTasks = BM1387MidstateCount * BM1387MidstateCount * BM1387MaxJobId
-	BM1387WaitFactor     = 0.5
+	BM1387BaudDiv            = 1
+	BM1387NumCores           = 114
+	BM1387MaxJobId           = 0x7f
+	BM1387MidstateCount      = 4
+	BM1387MaxVerifyTasks     = BM1387MidstateCount * BM1387MidstateCount * BM1387MaxJobId
+	BM1387WaitFactor         = 0.5
+	BM1387MaxResponseTimeout = 5 * time.Second
 )
 
 type BM1387Controller struct {
@@ -43,6 +44,7 @@ type BM1387Controller struct {
 	maxFrequency       float64
 	defaultFrequency   float64
 	targetChips        int
+	currentJobId       string
 }
 
 func NewBM1387Controller(
@@ -87,6 +89,7 @@ func (bm *BM1387Controller) Close() {
 }
 
 func (bm *BM1387Controller) Reset() error {
+	defer bm.loopRecover("init")
 	log.Println("Resetting", bm.LongString())
 	if err := bm.performReset(); err != nil {
 		go bm.Exit()
@@ -307,13 +310,15 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 
 func (bm *BM1387Controller) readLoop() {
 	defer bm.loopRecover("read")
-	var missingLoops uint32
+	var missingLoops uint64
 	var midstate, index int
 	buf := bytes.NewBuffer(make([]byte, 0, 2048))
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
+	var currentTask *protocol.Task
 	rb := protocol.NewResponseBlock()
-	mainTicker := time.NewTicker(time.Millisecond)
+	maxNonResponseLoops := uint64(BM1387MaxResponseTimeout / bm.maxTaskWait)
+	mainTicker := time.NewTicker(bm.maxTaskWait)
 	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
 	for i := 0; i < BM1387MaxVerifyTasks; i++ {
 		verifyTasks[i] = base.NewTaskResult()
@@ -327,10 +332,6 @@ func (bm *BM1387Controller) readLoop() {
 			return
 		case <-mainTicker.C:
 			buf.Reset()
-			if len(rb.ExtraData) > 0 {
-				buf.Write(rb.ExtraData)
-				rb.ExtraData = nil
-			}
 			rb.Count = 0
 			if err := bm.Read(buf); err != nil {
 				log.Println("Error reading response block:", err)
@@ -338,21 +339,17 @@ func (bm *BM1387Controller) readLoop() {
 				go bm.Exit()
 				return
 			}
-			if err := rb.UnmarshalBinary(protocol.Separator.Clean(buf.Bytes())); err != nil {
+			if err := rb.UnmarshalBinary(buf.Bytes()); err != nil {
 				log.Println("Error decoding response block:", err)
 				continue
 			}
 			if rb.Count == 0 {
 				missingLoops += 1
-				if missingLoops >= 1000 {
+				if missingLoops >= maxNonResponseLoops {
 					bm.waiter.Done()
 					go bm.Exit()
 					return
 				}
-				continue
-			}
-			if rb.Count >= len(rb.Responses) {
-				rb.ExtraData = nil
 				continue
 			}
 			missingLoops = 0
@@ -371,11 +368,14 @@ func (bm *BM1387Controller) readLoop() {
 					continue
 				}
 				nextResult = verifyTasks[verifyPos]
-				bm.tasks[index].UpdateResult(nextResult, taskResponse.Nonce, midstate)
-				bm.verifyQueue <- nextResult
-				verifyPos += 1
-				if verifyPos >= BM1387MaxVerifyTasks {
-					verifyPos = 0
+				currentTask = bm.tasks[index]
+				if currentTask.GetJobId() == bm.currentJobId {
+					currentTask.UpdateResult(nextResult, taskResponse.Nonce, midstate)
+					bm.verifyQueue <- nextResult
+					verifyPos += 1
+					if verifyPos >= BM1387MaxVerifyTasks {
+						verifyPos = 0
+					}
 				}
 			}
 		}
@@ -390,6 +390,7 @@ func (bm *BM1387Controller) writeLoop() {
 	var versionMasks [BM1387MidstateCount]uint32
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
+	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
 	for {
@@ -430,11 +431,15 @@ func (bm *BM1387Controller) writeLoop() {
 				currentTask.Update(task)
 			}
 		case work = <-workChan:
-			task = stratum.NewTask(BM1387MidstateCount, true)
+			bm.currentJobId = work.JobId
+			if task == nil {
+				task = stratum.NewTask(BM1387MidstateCount, true)
+			}
 			bm.submitChan = work.Pool.SubmitChan
 			bm.poolVersion = work.Version
 			bm.poolVersionRolling = work.VersionRolling
-			utils.CalculateDifficulty(big.NewInt(int64(work.Difficulty)), bm.currentDiff)
+			(&diff).SetInt64(int64(work.Difficulty))
+			utils.CalculateDifficulty(&diff, bm.currentDiff)
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
 				work.SetExtraNonce2(work.ExtraNonce2 + 1)
@@ -462,6 +467,9 @@ func (bm *BM1387Controller) verifyLoop() {
 			return
 		case verifyTask = <-bm.verifyQueue:
 			if verifyTask == nil {
+				continue
+			}
+			if verifyTask.JobId != bm.currentJobId {
 				continue
 			}
 			hash := verifyTask.CalculateHash()

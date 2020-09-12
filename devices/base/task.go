@@ -13,6 +13,7 @@ type ITask interface {
 	Update(task *stratum.Task)
 	UpdateResult(tr *TaskResult, nonce uint32, versionIndex int)
 	VersionsCount() int
+	GetJobId() string
 }
 
 type Task struct {
@@ -64,4 +65,8 @@ func (t *Task) UpdateResult(tr *TaskResult, nonce uint32, versionIndex int) {
 
 func (t *Task) VersionsCount() int {
 	return len(t.Versions)
+}
+
+func (t *Task) GetJobId() string {
+	return t.JobId
 }

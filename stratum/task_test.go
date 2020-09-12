@@ -11,7 +11,7 @@ func TestNewTask(t *testing.T) {
 	if pw == nil {
 		t.Fatal("pool work not decoded successfully")
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func BenchmarkNewTask(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
 	b.StartTimer()

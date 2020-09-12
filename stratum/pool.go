@@ -5,9 +5,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"io"
 	"log"
-	"net"
 	"sync"
 	"time"
 )
@@ -28,6 +26,7 @@ const (
 const RetryTimeout = 5 * time.Second
 const MaxCommandAge = 1 * time.Minute
 const CleanupTime = 1 * time.Minute
+const MaxPendingSubmits = 0xffff
 
 type Pool struct {
 	config          config.Pool
@@ -44,6 +43,8 @@ type Pool struct {
 	SubmitChan      chan *protocol.Submit
 	mtx             sync.Mutex
 	versions        *utils.Versions
+	versionShuffles uint
+	ReplyChan       chan *protocol.Reply
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -52,7 +53,8 @@ func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
 		status:          Disconnected,
 		pendingCommands: make(map[uint64]protocol.IMethod),
 		workChan:        workChan,
-		SubmitChan:      make(chan *protocol.Submit, 32),
+		SubmitChan:      make(chan *protocol.Submit, MaxPendingSubmits),
+		ReplyChan:       make(chan *protocol.Reply, 256),
 	}
 	return p
 }
@@ -76,41 +78,56 @@ func (p *Pool) String() string {
 	return fmt.Sprint(p.config.User, "@", p.config.URL)
 }
 
+func (p *Pool) cleanPendingCommands() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if len(p.pendingCommands) > 0 {
+		newPendingCommands := make(map[uint64]protocol.IMethod)
+		for id, cmd := range p.pendingCommands {
+			if cmd.Age() < MaxCommandAge {
+				newPendingCommands[id] = cmd
+			}
+		}
+		p.pendingCommands = newPendingCommands
+	}
+}
+
 func (p *Pool) loop() {
 	var submit *protocol.Submit
+	var reply *protocol.Reply
+	var ok bool
 	cleanupTicker := time.NewTicker(CleanupTime)
 	defer p.wg.Done()
 	for {
+		switch p.status {
+		case Disconnected:
+			p.handleDisconnected()
+			continue
+		case Connected:
+			p.handleConnected()
+		case Subscribed:
+			p.handleSubscribed()
+		case Configured:
+			p.handleConfigured()
+		}
 		select {
 		case <-p.quit:
 			cleanupTicker.Stop()
 			p.handleQuit()
 			return
 		case <-cleanupTicker.C:
-			if len(p.pendingCommands) > 0 {
-				newPendingCommands := make(map[uint64]protocol.IMethod)
-				for id, cmd := range p.pendingCommands {
-					if cmd.Age() < MaxCommandAge {
-						newPendingCommands[id] = cmd
-					}
-				}
-				p.pendingCommands = newPendingCommands
-			}
+			p.cleanPendingCommands()
 		case submit = <-p.SubmitChan:
-			go p.handleSubmit(submit)
-		default:
-			switch p.status {
-			case Disconnected:
-				p.handleDisconnected()
+			p.handleSubmit(submit)
+		case reply, ok = <-p.ReplyChan:
+			if !ok || reply == nil {
 				continue
-			case Connected:
-				p.handleConnected()
-			case Subscribed:
-				p.handleSubscribed()
-			case Configured:
-				p.handleConfigured()
 			}
-			p.receiveReply()
+			if reply.IsMethod() {
+				p.handleMethodCall(reply)
+			} else {
+				p.handleMethodResponse(reply)
+			}
 		}
 	}
 }
@@ -137,7 +154,7 @@ func (p *Pool) handleQuit() {
 }
 
 func (p *Pool) handleDisconnected() {
-	if conn, err := NewConnection(p.config.URL); err != nil {
+	if conn, err := NewConnection(p.config.URL, p.ReplyChan); err != nil {
 		log.Println("Error connecting to pool", p.config.URL, "-", err)
 		p.retryTimeout()
 	} else {
@@ -146,9 +163,19 @@ func (p *Pool) handleDisconnected() {
 	}
 }
 
-func (p *Pool) handleConnected() {
+func (p *Pool) addPendingCommand(cmd protocol.IMethod) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
+	p.pendingCommands[cmd.GetId()] = cmd
+}
+
+func (p *Pool) removePendingCommand(cmd protocol.IMethod) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	delete(p.pendingCommands, cmd.GetId())
+}
+
+func (p *Pool) handleConnected() {
 	log.Println("Connected to", p)
 	subscribe := protocol.NewSubscribe()
 	if err := p.conn.Call(subscribe); err != nil {
@@ -157,34 +184,11 @@ func (p *Pool) handleConnected() {
 		p.disconnect()
 	} else {
 		p.status = Subscribing
-		p.pendingCommands[subscribe.Id] = subscribe
-	}
-}
-
-func (p *Pool) receiveReply() {
-	if p.status != Disconnected {
-		if reply, err := p.conn.GetReply(); err == io.EOF {
-			p.conn = nil
-			p.status = Disconnected
-			log.Println("Pool", p, "disconnected")
-			p.retryTimeout()
-		} else if err, ok := err.(net.Error); ok && err.Timeout() {
-			return
-		} else if err != nil {
-			log.Println("Pool", p, "receive error:", err)
-		} else if reply != nil {
-			if reply.IsMethod() {
-				p.handleMethodCall(reply)
-			} else {
-				p.handleMethodResponse(reply)
-			}
-		}
+		p.addPendingCommand(subscribe)
 	}
 }
 
 func (p *Pool) handleSubscribed() {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
 	log.Println("Subscribed to", p)
 	configure := protocol.NewConfigure()
 	if err := p.conn.Call(configure); err != nil {
@@ -193,13 +197,11 @@ func (p *Pool) handleSubscribed() {
 		p.disconnect()
 	} else {
 		p.status = Configuring
-		p.pendingCommands[configure.Id] = configure
+		p.addPendingCommand(configure)
 	}
 }
 
 func (p *Pool) handleConfigured() {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
 	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
 	if err := p.conn.Call(authorize); err != nil {
 		log.Println("Pool", p, "authorization error:", err)
@@ -207,13 +209,11 @@ func (p *Pool) handleConfigured() {
 		p.disconnect()
 	} else {
 		p.status = Authorizing
-		p.pendingCommands[authorize.Id] = authorize
+		p.addPendingCommand(authorize)
 	}
 }
 
 func (p *Pool) handleSubmit(submit *protocol.Submit) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
 	submit.Params[0] = p.config.User
 	if p.notify.JobId != submit.Params[1] {
 		return
@@ -223,21 +223,26 @@ func (p *Pool) handleSubmit(submit *protocol.Submit) {
 		p.retryTimeout()
 		p.disconnect()
 	} else {
-		p.pendingCommands[submit.Id] = submit
+		p.addPendingCommand(submit)
 	}
 }
 
-func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
+func (p *Pool) getPendingCommand(id uint64) (protocol.IMethod, bool) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	method, ok := p.pendingCommands[reply.Id]
+	method, ok := p.pendingCommands[id]
+	return method, ok
+}
+
+func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
+	method, ok := p.getPendingCommand(reply.Id)
 	if !ok {
 		log.Println("Pool", p, "received unknown reply:", reply)
 		return
 	}
 	switch m := method.(type) {
 	case *protocol.Subscribe:
-		delete(p.pendingCommands, m.Id)
+		p.removePendingCommand(m)
 		if sr, err := protocol.NewSubscribeResponse(reply); err != nil {
 			log.Println("Pool", p, "subscribe response error:", err)
 		} else {
@@ -245,7 +250,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			p.status = Subscribed
 		}
 	case *protocol.Authorize:
-		delete(p.pendingCommands, m.Id)
+		p.removePendingCommand(m)
 		if ar, err := protocol.NewAuthorizeResponse(reply); err != nil {
 			log.Println("Pool", p, "authorize response error:", err)
 		} else {
@@ -260,7 +265,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			}
 		}
 	case *protocol.Configure:
-		delete(p.pendingCommands, m.Id)
+		p.removePendingCommand(m)
 		if cr, err := protocol.NewConfigureResponse(reply); err != nil {
 			log.Println("Pool", p, "configure response error:", err)
 		} else {
@@ -268,7 +273,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			p.configuration = cr
 		}
 	case *protocol.Submit:
-		delete(p.pendingCommands, m.Id)
+		p.removePendingCommand(m)
 		if reply.Error != nil {
 			log.Println("Pool submit error:", reply.Error)
 		}
@@ -348,7 +353,14 @@ func (p *Pool) processWork() {
 		reloadVersions = true
 	}
 	if reloadVersions {
-		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 2, 8)
+		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 1, 10)
+		p.versions.Shuffle()
+		p.versionShuffles = 0
+	}
+	p.versionShuffles += 1
+	if p.versionShuffles >= 100 {
+		p.versions.Shuffle()
+		p.versionShuffles = 0
 	}
 	work.VersionsSource = p.versions
 	p.workChan <- work

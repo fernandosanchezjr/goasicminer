@@ -1,7 +1,6 @@
 package stratum
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -30,7 +29,7 @@ type Connection struct {
 	replyChan chan *protocol.Reply
 }
 
-func NewConnection(address string) (*Connection, error) {
+func NewConnection(address string, replyChan chan *protocol.Reply) (*Connection, error) {
 	var host, port string
 	var addrs []string
 	var err error
@@ -61,7 +60,7 @@ func NewConnection(address string) (*Connection, error) {
 		//	return nil, err
 		//}
 		c := &Connection{conn: conn, reader: json.NewDecoder(conn), writer: json.NewEncoder(conn), id: 0,
-			replyChan: make(chan *protocol.Reply, 256)}
+			replyChan: replyChan}
 		go c.replyLoop()
 		return c, nil
 	}
@@ -108,17 +107,5 @@ func (c *Connection) replyLoop() {
 			c.replyChan <- r
 			r = &protocol.Reply{}
 		}
-	}
-}
-
-func (c *Connection) GetReply() (*protocol.Reply, error) {
-	var reply *protocol.Reply
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	select {
-	case <-ctx.Done():
-		return nil, nil
-	case reply = <-c.replyChan:
-		cancel()
-		return reply, nil
 	}
 }

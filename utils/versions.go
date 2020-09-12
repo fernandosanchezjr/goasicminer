@@ -3,6 +3,10 @@ package utils
 import (
 	"gonum.org/v1/gonum/stat/combin"
 	"math/bits"
+	"math/rand"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type Versions struct {
@@ -12,7 +16,8 @@ type Versions struct {
 	maxVersionBits int
 	bitCount       int
 	RolledVersions []uint32
-	pos            int
+	pos            int32
+	mtx            sync.Mutex
 }
 
 func NewVersions(version uint32, mask uint32, minVersionBits int, maxVersionBits int) *Versions {
@@ -35,9 +40,17 @@ func (vs *Versions) init() {
 		}
 		versionMask = versionMask >> 1
 	}
-	vs.RolledVersions = []uint32{}
-	if vs.bitCount > 0 && vs.minVersionBits > 0 && vs.maxVersionBits > vs.minVersionBits &&
-		vs.bitCount >= vs.minVersionBits && vs.bitCount > vs.maxVersionBits {
+	vs.RolledVersions = []uint32{0x20000000}
+	if vs.maxVersionBits >= vs.bitCount {
+		vs.maxVersionBits = vs.bitCount - 1
+	}
+	if vs.minVersionBits == 1 {
+		vs.maxVersionBits += 1
+		for i := 0; i < vs.bitCount; i++ {
+			vs.RolledVersions = append(vs.RolledVersions, vs.Version|1<<bitPositions[i])
+		}
+	}
+	if vs.bitCount > 0 && vs.minVersionBits > 0 && vs.bitCount > vs.maxVersionBits {
 		for i := vs.minVersionBits; i < vs.maxVersionBits+1; i++ {
 			combinations := combin.Combinations(vs.bitCount, i)
 			totalCombinations := len(combinations)
@@ -52,21 +65,23 @@ func (vs *Versions) init() {
 	}
 }
 
+func (vs *Versions) Shuffle() {
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(vs.RolledVersions), func(i, j int) {
+		vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
+	})
+}
+
 func (vs *Versions) Retrieve(dest []uint32) {
 	destCount := len(dest)
-	rolledCount := len(vs.RolledVersions)
+	rolledCount := int32(len(vs.RolledVersions))
 	if destCount == 0 {
 		return
 	}
 	for i := 0; i < destCount; i++ {
-		if i == 0 {
-			dest[i] = vs.Version
-		} else {
-			dest[i] = vs.RolledVersions[vs.pos]
-			vs.pos += 1
-			if vs.pos >= rolledCount {
-				vs.pos = 0
-			}
+		dest[i] = vs.RolledVersions[vs.pos]
+		if atomic.AddInt32(&vs.pos, 1) >= rolledCount {
+			atomic.StoreInt32(&vs.pos, 0)
 		}
 	}
 }

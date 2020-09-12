@@ -14,7 +14,7 @@ func TestTask_TestEncodeNoBoost(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(4)
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(1, true)
@@ -34,7 +34,7 @@ func TestTask_TestEncodeBoost(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(4)
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(4, true)
@@ -53,7 +53,7 @@ func BenchmarkTask_Update(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(4, true)
@@ -72,7 +72,7 @@ func TestTask_Result(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4)
+	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
 	var versionMasks [4]uint32
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(1, true)

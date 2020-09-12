@@ -6,7 +6,6 @@ const (
 
 type ResponseBlock struct {
 	Responses []*TaskResponse
-	ExtraData []byte
 	Count     int
 }
 
@@ -19,20 +18,24 @@ func NewResponseBlock() *ResponseBlock {
 }
 
 func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
-	pos := 0
+	rb.Count = 0
+	if len(data) == 0 {
+		return nil
+	}
 	for len(data) > 0 {
+		start, end := Separator.Search(data)
+		if start != -1 && end != -1 {
+			data = data[end+1:]
+		}
 		if len(data) >= 7 {
-			if err := rb.Responses[pos].UnmarshalBinary(data[:7]); err != nil {
-				rb.Count = pos
+			if err := rb.Responses[rb.Count].UnmarshalBinary(data[:7]); err != nil {
 				return err
 			}
 			data = data[7:]
-			pos++
+			rb.Count += 1
 		} else {
-			rb.ExtraData = data
 			break
 		}
 	}
-	rb.Count = pos
 	return nil
 }

@@ -1,12 +1,19 @@
 package base
 
 import (
+	"flag"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"github.com/fernandosanchezjr/gousb"
 	"log"
 	"sync"
 )
+
+var useRandomExtraNonce2 bool
+
+func init() {
+	flag.BoolVar(&useRandomExtraNonce2, "use-random-extra-nonce", false, "use random ExtraNonce2")
+}
 
 type Context struct {
 	*gousb.Context
@@ -85,7 +92,11 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
 	for _, ct := range c.controllers {
-		work.ExtraNonce2 = utils.Random(16.0)
+		if useRandomExtraNonce2 {
+			work.ExtraNonce2 = utils.Random(8.0)
+		} else {
+			work.ExtraNonce2 = 0
+		}
 		ct.UpdateWork(work.Clone())
 	}
 }

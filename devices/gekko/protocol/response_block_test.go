@@ -12,7 +12,7 @@ func TestResponseBlock_UnmarshalBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	rb := NewResponseBlock()
-	if err := rb.UnmarshalBinary(Separator.Clean(data)); err != nil {
+	if err := rb.UnmarshalBinary(data); err != nil {
 		t.Fatal(err)
 	}
 	if rb.Count != 6 {
