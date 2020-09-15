@@ -8,13 +8,16 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"runtime/trace"
 )
 
 var cpuProfile bool
+var tracing bool
 var exitChannel chan os.Signal
 
 func init() {
 	flag.BoolVar(&cpuProfile, "cpu-profile", cpuProfile, "enable cpu profiling")
+	flag.BoolVar(&tracing, "trace", tracing, "enable tracing")
 	exitChannel = make(chan os.Signal, 1)
 }
 
@@ -38,6 +41,16 @@ func main() {
 			panic(err)
 		}
 		defer pprof.StopCPUProfile()
+	}
+	if tracing {
+		f, err := os.Create("goasicminer.trace")
+		if err != nil {
+			panic(err)
+		}
+		if err := trace.Start(f); err != nil {
+			panic(err)
+		}
+		defer trace.Stop()
 	}
 	cfg, err := config.LoadConfig()
 	if err != nil {

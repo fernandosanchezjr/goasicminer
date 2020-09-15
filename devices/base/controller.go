@@ -1,15 +1,11 @@
 package base
 
 import (
-	"bytes"
-	"context"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
-	"github.com/fernandosanchezjr/gousb"
+	"github.com/ziutek/ftdi"
 	"log"
-	"time"
 )
 
 var logDeviceTraffic bool
@@ -23,38 +19,30 @@ type IController interface {
 	LongString() string
 	Close()
 	Exit()
+	Device() *ftdi.Device
 	Driver() IDriver
-	USBDevice() *gousb.Device
-	InEndpoint() *gousb.InEndpoint
-	OutEndpoint() *gousb.OutEndpoint
 	Equals(other IController) bool
-	Initialize() error
 	Reset() error
-	Write(data []byte) error
-	Read(buf *bytes.Buffer) error
-	ReadTimeout(buf *bytes.Buffer, timeout time.Duration) error
 	UpdateWork(work *stratum.Work)
 	WorkChannel() stratum.PoolWorkChan
+	AllocateWriteBuffer() ([]byte, error)
+	Write(data []byte) (int, error)
+	AllocateReadBuffer() ([]byte, error)
+	Read(data []byte) (int, error)
 }
 
 type Controller struct {
-	*gousb.Device
-	driver            IDriver
-	done              func()
-	iface             *gousb.Interface
-	inEndpointNumber  int
-	outEndpointNumber int
-	inEndpoint        *gousb.InEndpoint
-	outEndpoint       *gousb.OutEndpoint
-	readBuffer        []byte
-	serialNumber      string
-	workChan          stratum.PoolWorkChan
-	context           *Context
+	device       *ftdi.Device
+	driver       IDriver
+	done         func()
+	serialNumber string
+	workChan     stratum.PoolWorkChan
+	context      *Context
 }
 
-func NewController(context *Context, driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) *Controller {
-	return &Controller{context: context, Device: device, driver: driver, done: nil, inEndpointNumber: inEndpoint,
-		outEndpointNumber: outEndpoint, workChan: make(stratum.PoolWorkChan, 1)}
+func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
+	return &Controller{device: device, context: ctx, driver: driver, done: nil, serialNumber: serialNumber,
+		workChan: make(stratum.PoolWorkChan, 1)}
 }
 
 func (c *Controller) String() string {
@@ -77,11 +65,8 @@ func (c *Controller) Close() {
 		c.done()
 		c.done = nil
 	}
-	if c.iface != nil {
-		c.iface.Close()
-	}
-	if err := c.Device.Close(); err != nil {
-		log.Printf("Error closing %s: %v", c.LongString(), err)
+	if err := c.device.Close(); err != nil {
+		log.Printf("Error closing %s: %s", c, err)
 	}
 }
 
@@ -92,105 +77,19 @@ func (c *Controller) Exit() {
 	c.context.Unregister(c)
 }
 
+func (c *Controller) Device() *ftdi.Device {
+	return c.device
+}
+
 func (c *Controller) Driver() IDriver {
 	return c.driver
 }
 
-func (c *Controller) USBDevice() *gousb.Device {
-	return c.Device
-}
-
-func (c *Controller) InEndpoint() *gousb.InEndpoint {
-	return c.inEndpoint
-}
-
-func (c *Controller) OutEndpoint() *gousb.OutEndpoint {
-	return c.outEndpoint
-}
-
 func (c *Controller) Equals(other IController) bool {
-	oud := other.USBDevice()
-	return c.Desc.Address == oud.Desc.Address
-}
-
-func (c *Controller) Initialize() error {
-	var err error
-	if err = c.SetAutoDetach(true); err != nil {
-		return err
-	}
-	if c.serialNumber, err = c.SerialNumber(); err != nil {
-		return err
-	}
-	if c.iface, c.done, err = c.DefaultInterface(); err != nil {
-		return err
-	}
-	if c.inEndpoint, err = c.iface.InEndpoint(c.inEndpointNumber); err != nil {
-		return err
-	} else {
-		c.readBuffer = make([]byte, c.inEndpoint.Desc.MaxPacketSize)
-	}
-	if c.outEndpoint, err = c.iface.OutEndpoint(c.outEndpointNumber); err != nil {
-		return err
-	}
-	return nil
+	return c.String() == other.String()
 }
 
 func (c *Controller) Reset() error {
-	return nil
-}
-
-func (c *Controller) Write(data []byte) error {
-	outEndpoint := c.OutEndpoint()
-	countLen := len(data)
-	if logDeviceTraffic {
-		log.Println("Writing:", hex.EncodeToString(data))
-	}
-	if written, err := outEndpoint.Write(data); err != nil {
-		return err
-	} else if written != countLen {
-		return fmt.Errorf("could not write %d bytes", countLen)
-	}
-	return nil
-}
-
-func (c *Controller) Read(buf *bytes.Buffer) error {
-	inEndpoint := c.InEndpoint()
-	for {
-		if read, err := inEndpoint.Read(c.readBuffer); err != nil {
-			return err
-		} else {
-			buf.Write(c.readBuffer[:read])
-			if read < c.inEndpoint.Desc.MaxPacketSize {
-				if logDeviceTraffic {
-					log.Println("Read:", hex.EncodeToString(buf.Bytes()))
-				}
-				break
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Controller) ReadTimeout(buf *bytes.Buffer, timeout time.Duration) error {
-	inEndpoint := c.InEndpoint()
-	ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-	defer cancel()
-	for {
-		if read, err := inEndpoint.ReadContext(ctx, c.readBuffer); err != nil {
-			if err == gousb.ErrorTimeout || err == gousb.TransferCancelled || err == gousb.ErrorInterrupted {
-				return nil
-			}
-			return err
-		} else {
-			buf.Write(c.readBuffer[:read])
-			if read < c.inEndpoint.Desc.MaxPacketSize {
-				if logDeviceTraffic {
-					log.Println("Read:", hex.EncodeToString(buf.Bytes()))
-				}
-				break
-			}
-		}
-	}
 	return nil
 }
 
@@ -203,4 +102,28 @@ func (c *Controller) UpdateWork(work *stratum.Work) {
 
 func (c *Controller) WorkChannel() stratum.PoolWorkChan {
 	return c.workChan
+}
+
+func (c *Controller) AllocateWriteBuffer() ([]byte, error) {
+	if size, err := c.device.WriteChunkSize(); err != nil {
+		return nil, err
+	} else {
+		return make([]byte, size), nil
+	}
+}
+
+func (c *Controller) Write(data []byte) (int, error) {
+	return c.device.Write(data)
+}
+
+func (c *Controller) AllocateReadBuffer() ([]byte, error) {
+	if size, err := c.device.ReadChunkSize(); err != nil {
+		return nil, err
+	} else {
+		return make([]byte, size), nil
+	}
+}
+
+func (c *Controller) Read(data []byte) (int, error) {
+	return c.device.Read(data)
 }

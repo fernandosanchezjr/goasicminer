@@ -4,64 +4,52 @@ import (
 	"flag"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"github.com/fernandosanchezjr/gousb"
-	"log"
 	"sync"
 )
 
-var useRandomExtraNonce2 bool
+var UseRandomExtraNonce2 bool
 
 func init() {
-	flag.BoolVar(&useRandomExtraNonce2, "use-random-extra-nonce", false, "use random ExtraNonce2")
+	flag.BoolVar(&UseRandomExtraNonce2, "use-random-extra-nonce", false, "use random ExtraNonce2")
 }
 
 type Context struct {
-	*gousb.Context
 	controllersMtx sync.Mutex
-	controllers    []IController
+	controllers    map[string]IController
 }
 
 func NewContext() *Context {
 	c := &Context{
-		Context: gousb.NewContext(),
+		controllers: map[string]IController{},
 	}
-	c.Debug(0)
 	return c
 }
 
-func (c *Context) InUse(controller IController) bool {
+func (c *Context) InUse(serial string) bool {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	for _, ct := range c.controllers {
-		if ct.Equals(controller) {
-			return true
-		}
-	}
-	return false
+	_, found := c.controllers[serial]
+	return found
 }
 
 func (c *Context) Register(controller IController) {
-	if c.InUse(controller) {
+	serialNumber := controller.String()
+	if c.InUse(serialNumber) {
 		return
 	}
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	c.controllers = append(c.controllers, controller)
+	c.controllers[serialNumber] = controller
 }
 
 func (c *Context) Unregister(controller IController) {
-	if !c.InUse(controller) {
+	serialNumber := controller.String()
+	if !c.InUse(serialNumber) {
 		return
 	}
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	var newControllers []IController
-	for _, ct := range c.controllers {
-		if !ct.Equals(controller) {
-			newControllers = append(newControllers, ct)
-		}
-	}
-	c.controllers = newControllers
+	delete(c.controllers, serialNumber)
 }
 
 func (c *Context) Close() {
@@ -70,10 +58,7 @@ func (c *Context) Close() {
 	for _, ct := range c.controllers {
 		ct.Close()
 	}
-	c.controllers = []IController{}
-	if err := c.Context.Close(); err != nil {
-		log.Println("Error closing USB context:", err)
-	}
+	c.controllers = map[string]IController{}
 }
 
 func (c *Context) GetControllers(driver IDriver) []IController {
@@ -92,7 +77,7 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
 	for _, ct := range c.controllers {
-		if useRandomExtraNonce2 {
+		if UseRandomExtraNonce2 {
 			work.ExtraNonce2 = utils.Random(8.0)
 		} else {
 			work.ExtraNonce2 = 0

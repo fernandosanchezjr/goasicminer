@@ -1,21 +1,25 @@
 package gekko
 
 import (
-	"bytes"
+	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	protocol2 "github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
+	"github.com/ziutek/ftdi"
 	"log"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
 	BM1387BaudDiv            = 1
+	BM1387InitialBaudRate    = 115200
+	BM1387BaudRate           = 375000
 	BM1387NumCores           = 114
 	BM1387MaxJobId           = 0x7f
 	BM1387MidstateCount      = 4
@@ -23,6 +27,13 @@ const (
 	BM1387WaitFactor         = 0.5
 	BM1387MaxResponseTimeout = 5 * time.Second
 )
+
+var extremeVersionRolling bool
+
+func init() {
+	flag.BoolVar(&extremeVersionRolling, "extreme-version-rolling", false,
+		"use extreme version rolling")
+}
 
 type BM1387Controller struct {
 	base.IController
@@ -120,63 +131,59 @@ func (bm *BM1387Controller) Reset() error {
 }
 
 func (bm *BM1387Controller) performReset() error {
-	device := bm.USBDevice()
-	// Reverse-engineered from cgminer with wireshark
-	// FTDI Reset
-	if _, err := device.Control(64, 0, 0, 0, nil); err != nil {
+	device := bm.Device()
+	if err := device.Reset(); err != nil {
 		return err
 	}
-	// FTDI Set Data
-	if _, err := device.Control(64, 4, 8, 0, nil); err != nil {
+	if err := device.SetLineProperties2(ftdi.DataBits8, ftdi.StopBits1, ftdi.ParityNone, ftdi.BreakOff); err != nil {
 		return err
 	}
-	// FTDI Set Baud
-	if _, err := device.Control(64, 3, 0x1a, 0, nil); err != nil {
+	if err := device.SetBaudrate(BM1387InitialBaudRate); err != nil {
 		return err
 	}
-	// FTDI Set Flow Control
-	if _, err := device.Control(64, 2, 0, 0, nil); err != nil {
+	if err := device.SetFlowControl(ftdi.FlowCtrlDisable); err != nil {
 		return err
 	}
-	// FTDI Purge TX
-	if _, err := device.Control(64, 0, 2, 0, nil); err != nil {
+	if err := device.PurgeWriteBuffer(); err != nil {
 		return err
 	}
-	// FTDI Purge RX
-	if _, err := device.Control(64, 0, 1, 0, nil); err != nil {
+	if err := device.PurgeReadBuffer(); err != nil {
 		return err
 	}
-	// FTDI Bitmode CB1 High
-	if _, err := device.Control(64, 0xb, 0x20f2, 0, nil); err != nil {
+	if err := device.SetBitmode(0xf2, ftdi.ModeCBUS); err != nil {
 		return err
 	}
 	time.Sleep(30 * time.Millisecond)
-	// FTDI Bitmode CB1 Low
-	if _, err := device.Control(64, 0xb, 0x20f0, 0, nil); err != nil {
+	if err := device.SetBitmode(0xf0, ftdi.ModeCBUS); err != nil {
 		return err
 	}
 	time.Sleep(30 * time.Millisecond)
-	// FTDI Bitmode CB1 High
-	if _, err := device.Control(64, 0xb, 0x20f2, 0, nil); err != nil {
+	if err := device.SetBitmode(0xf2, ftdi.ModeCBUS); err != nil {
 		return err
 	}
 	time.Sleep(200 * time.Millisecond)
+	if err := device.SetLatencyTimer(1); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (bm *BM1387Controller) countChips() error {
-	var buf bytes.Buffer
+	buf, err := bm.AllocateReadBuffer()
+	if err != nil {
+		return err
+	}
 	cc := protocol.NewCountChips()
 	data, _ := cc.MarshalBinary()
-	if err := bm.Write(data); err != nil {
+	if _, err := bm.Write(data); err != nil {
 		return err
 	}
 	time.Sleep(10 * time.Millisecond)
-	if err := bm.ReadTimeout(&buf, 100*time.Millisecond); err != nil {
+	if read, err := bm.Read(buf); err != nil {
 		return err
 	} else {
 		ccr := protocol.NewCountChipsResponse()
-		if err := ccr.UnmarshalBinary(protocol.Separator.Clean(buf.Bytes())); err != nil {
+		if err := ccr.UnmarshalBinary(buf[:read]); err != nil {
 			return err
 		} else {
 			bm.chipCount = len(ccr.Chips)
@@ -194,15 +201,15 @@ func (bm *BM1387Controller) sendChainInactive() error {
 	if data, err := ci.MarshalBinary(); err != nil {
 		return err
 	} else {
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
 		time.Sleep(5 * time.Millisecond)
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
 		time.Sleep(5 * time.Millisecond)
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
 	}
@@ -212,7 +219,7 @@ func (bm *BM1387Controller) sendChainInactive() error {
 			return err
 		} else {
 			time.Sleep(5 * time.Millisecond)
-			if err := bm.Write(data); err != nil {
+			if _, err := bm.Write(data); err != nil {
 				return err
 			}
 		}
@@ -227,19 +234,20 @@ func (bm *BM1387Controller) setBaud() error {
 	if data, err := sba.MarshalBinary(); err != nil {
 		return err
 	} else {
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Set baud
-	if _, err := bm.USBDevice().Control(64, 3, 0x02, 0, nil); err != nil {
+	//Set baud
+	device := bm.Device()
+	if err := device.SetBaudrate(BM1387BaudRate); err != nil {
 		return err
 	}
 	if data, err := sbb.MarshalBinary(); err != nil {
 		return err
 	} else {
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -265,15 +273,18 @@ func (bm *BM1387Controller) setFrequency(frequency float64) error {
 }
 
 func (bm *BM1387Controller) setChipFrequency(frequency float64, chipId int) error {
+	buf, err := bm.AllocateReadBuffer()
+	if err != nil {
+		return err
+	}
 	sf := protocol.NewSetFrequency(frequency, bm.chipCount, chipId)
 	if data, err := sf.MarshalBinary(); err != nil {
 		return err
 	} else {
-		if err := bm.Write(data); err != nil {
+		if _, err := bm.Write(data); err != nil {
 			return err
 		}
-		buf := bytes.NewBuffer(make([]byte, 0, 2048))
-		if err := bm.ReadTimeout(buf, 50*time.Millisecond); err != nil {
+		if _, err := bm.Read(buf); err != nil {
 			return err
 		}
 	}
@@ -284,7 +295,7 @@ func (bm *BM1387Controller) setTiming() {
 	var hashRate utils.HashRate
 	hashRate, bm.fullscanDuration, bm.maxTaskWait = protocol.Timing(bm.chipCount, bm.frequency, BM1387NumCores,
 		BM1387WaitFactor)
-	log.Println("Hashrate", hashRate)
+	log.Println("Hash rate:", hashRate)
 	log.Println("Full scan time:", bm.fullscanDuration)
 	log.Println("Max task wait:", bm.maxTaskWait)
 }
@@ -300,7 +311,9 @@ func (bm *BM1387Controller) initializeTasks() error {
 
 func (bm *BM1387Controller) loopRecover(loopName string) {
 	if err := recover(); err != nil {
-		log.Printf("Error in %s loop: %s", loopName, err)
+		if !strings.Contains(fmt.Sprint(err), "send on closed channel") {
+			log.Printf("Error in %s loop: %s", loopName, err)
+		}
 		bm.waiter.Done()
 		if !bm.shuttingDown {
 			go bm.Exit()
@@ -310,9 +323,13 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 
 func (bm *BM1387Controller) readLoop() {
 	defer bm.loopRecover("read")
+	buf, err := bm.AllocateReadBuffer()
+	if err != nil {
+		panic(err)
+	}
 	var missingLoops uint64
 	var midstate, index int
-	buf := bytes.NewBuffer(make([]byte, 0, 2048))
+	var read int
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
@@ -331,25 +348,26 @@ func (bm *BM1387Controller) readLoop() {
 			bm.waiter.Done()
 			return
 		case <-mainTicker.C:
-			buf.Reset()
 			rb.Count = 0
-			if err := bm.Read(buf); err != nil {
+			if read, err = bm.Read(buf); err != nil {
 				log.Println("Error reading response block:", err)
+				mainTicker.Stop()
 				bm.waiter.Done()
 				go bm.Exit()
 				return
 			}
-			if err := rb.UnmarshalBinary(buf.Bytes()); err != nil {
-				log.Println("Error decoding response block:", err)
-				continue
-			}
-			if rb.Count == 0 {
+			if read == 0 {
 				missingLoops += 1
 				if missingLoops >= maxNonResponseLoops {
+					mainTicker.Stop()
 					bm.waiter.Done()
 					go bm.Exit()
 					return
 				}
+				continue
+			}
+			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
+				log.Println("Error decoding response block:", err)
 				continue
 			}
 			missingLoops = 0
@@ -399,6 +417,22 @@ func (bm *BM1387Controller) writeLoop() {
 			mainTicker.Stop()
 			bm.waiter.Done()
 			return
+		case work = <-workChan:
+			bm.currentJobId = work.JobId
+			if task == nil {
+				task = stratum.NewTask(BM1387MidstateCount, true)
+			}
+			bm.submitChan = work.Pool.SubmitChan
+			bm.poolVersion = work.Version
+			bm.poolVersionRolling = work.VersionRolling
+			(&diff).SetInt64(int64(work.Difficulty))
+			utils.CalculateDifficulty(&diff, bm.currentDiff)
+			work.VersionsSource.Retrieve(versionMasks[:])
+			task.Update(work, versionMasks[:])
+			if warmedUp {
+				currentTask = bm.tasks[nextPos]
+				currentTask.Update(task)
+			}
 		case <-mainTicker.C:
 			if work == nil {
 				continue
@@ -407,7 +441,7 @@ func (bm *BM1387Controller) writeLoop() {
 			if data, err := currentTask.MarshalBinary(); err != nil {
 				panic(err)
 			} else {
-				if err = bm.Write(data); err != nil {
+				if _, err = bm.Write(data); err != nil {
 					log.Println("USB write error:", err)
 					bm.waiter.Done()
 					go bm.Exit()
@@ -425,25 +459,14 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
-				work.SetExtraNonce2(work.ExtraNonce2 + 1)
-				work.VersionsSource.Retrieve(versionMasks[:])
-				task.Update(work, versionMasks[:])
-				currentTask.Update(task)
-			}
-		case work = <-workChan:
-			bm.currentJobId = work.JobId
-			if task == nil {
-				task = stratum.NewTask(BM1387MidstateCount, true)
-			}
-			bm.submitChan = work.Pool.SubmitChan
-			bm.poolVersion = work.Version
-			bm.poolVersionRolling = work.VersionRolling
-			(&diff).SetInt64(int64(work.Difficulty))
-			utils.CalculateDifficulty(&diff, bm.currentDiff)
-			if warmedUp {
-				currentTask = bm.tasks[nextPos]
-				work.SetExtraNonce2(work.ExtraNonce2 + 1)
-				work.VersionsSource.Retrieve(versionMasks[:])
+				if base.UseRandomExtraNonce2 && nextPos == 0 {
+					work.SetExtraNonce2(utils.Random(8.0))
+				} else {
+					work.SetExtraNonce2(work.ExtraNonce2 + 1)
+				}
+				if extremeVersionRolling {
+					work.VersionsSource.Retrieve(versionMasks[:])
+				}
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
@@ -473,27 +496,25 @@ func (bm *BM1387Controller) verifyLoop() {
 				continue
 			}
 			hash := verifyTask.CalculateHash()
-			if hash[31] == 0 && hash[30] == 0 && hash[29] == 0 && hash[28] == 0 {
-				utils.HashToBig(hash, &hashBig)
-				match = hashBig.Cmp(bm.currentDiff) <= 0
-				if match {
-					if bm.poolVersionRolling {
-						submitVersion = verifyTask.Version & ^bm.poolVersion
-					} else {
-						submitVersion = 0
-					}
-					bm.submitChan <- protocol2.NewSubmit(
-						verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
-					)
-					utils.CalculateDifficulty(&hashBig, &resultDiff)
-					diff = utils.Difficulty(resultDiff.Int64())
-					log.Printf("%s job %s extra nonce2 %016x ntime %08x nonce %08x version %08x diff %s",
-						bm, verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce,
-						verifyTask.Version, diff)
-					if diff > maxDiff {
-						maxDiff = diff
-						log.Printf("%s best share: %s", bm, maxDiff)
-					}
+			utils.HashToBig(hash, &hashBig)
+			match = hashBig.Cmp(bm.currentDiff) <= 0
+			if match {
+				if bm.poolVersionRolling {
+					submitVersion = verifyTask.Version & ^bm.poolVersion
+				} else {
+					submitVersion = 0
+				}
+				bm.submitChan <- protocol2.NewSubmit(
+					verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
+				)
+				utils.CalculateDifficulty(&hashBig, &resultDiff)
+				diff = utils.Difficulty(resultDiff.Int64())
+				log.Printf("%s job %s extra nonce2 %016x ntime %08x nonce %08x version %08x diff %s",
+					bm, verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce,
+					verifyTask.Version, diff)
+				if diff > maxDiff {
+					maxDiff = diff
+					log.Printf("%s best share: %s", bm, maxDiff)
 				}
 			}
 		}

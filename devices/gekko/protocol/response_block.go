@@ -23,10 +23,6 @@ func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
 		return nil
 	}
 	for len(data) > 0 {
-		start, end := Separator.Search(data)
-		if start != -1 && end != -1 {
-			data = data[end+1:]
-		}
 		if len(data) >= 7 {
 			if err := rb.Responses[rb.Count].UnmarshalBinary(data[:7]); err != nil {
 				return err

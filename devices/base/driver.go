@@ -2,34 +2,36 @@ package base
 
 import (
 	"fmt"
-	"github.com/fernandosanchezjr/gousb"
+	"github.com/ziutek/ftdi"
 )
 
 type IDriver interface {
-	MatchesPidVid(desc *gousb.DeviceDesc) bool
+	GetPidVid() PidVid
 	MatchesDevice(manufacturer, productName string) bool
 	String() string
-	NewController(context *Context, driver IDriver, device *gousb.Device, inEndpoint, outEndpoint int) IController
+	NewController(context *Context, driver IDriver, device *ftdi.Device, serialNumber string) IController
 	Equals(driver IDriver) bool
-	EndpointNumbers() (int, int)
+	GetChannel() ftdi.Channel
 }
 
 type Driver struct {
 	PidVid
-	Manufacturer      string
-	ProductName       string
-	InEndpointNumber  int
-	OutEndpointNumber int
+	Manufacturer string
+	ProductName  string
+	Channel      ftdi.Channel
 }
 
-func NewDriver(product, vendor gousb.ID, manufacturer, productName string, inEndpointNumber, outEndpointNumber int) *Driver {
+func NewDriver(product, vendor int, manufacturer, productName string, channel ftdi.Channel) *Driver {
 	return &Driver{
-		PidVid:            PidVid{Product: product, Vendor: vendor},
-		Manufacturer:      manufacturer,
-		ProductName:       productName,
-		InEndpointNumber:  inEndpointNumber,
-		OutEndpointNumber: outEndpointNumber,
+		PidVid:       PidVid{Product: product, Vendor: vendor},
+		Manufacturer: manufacturer,
+		ProductName:  productName,
+		Channel:      channel,
 	}
+}
+
+func (d *Driver) GetPidVid() PidVid {
+	return d.PidVid
 }
 
 func (d *Driver) MatchesDevice(manufaturer, productName string) bool {
@@ -47,13 +49,12 @@ func (d *Driver) Equals(driver IDriver) bool {
 func (d *Driver) NewController(
 	context *Context,
 	driver IDriver,
-	device *gousb.Device,
-	inEndpoint,
-	outEndpoint int,
+	device *ftdi.Device,
+	serialNumber string,
 ) IController {
-	return NewController(context, driver, device, inEndpoint, outEndpoint)
+	return NewController(context, driver, device, serialNumber)
 }
 
-func (d *Driver) EndpointNumbers() (int, int) {
-	return d.InEndpointNumber, d.OutEndpointNumber
+func (d *Driver) GetChannel() ftdi.Channel {
+	return d.Channel
 }

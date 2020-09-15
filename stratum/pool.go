@@ -43,7 +43,6 @@ type Pool struct {
 	SubmitChan      chan *protocol.Submit
 	mtx             sync.Mutex
 	versions        *utils.Versions
-	versionShuffles uint
 	ReplyChan       chan *protocol.Reply
 }
 
@@ -117,8 +116,6 @@ func (p *Pool) loop() {
 			return
 		case <-cleanupTicker.C:
 			p.cleanPendingCommands()
-		case submit = <-p.SubmitChan:
-			p.handleSubmit(submit)
 		case reply, ok = <-p.ReplyChan:
 			if !ok || reply == nil {
 				continue
@@ -128,6 +125,8 @@ func (p *Pool) loop() {
 			} else {
 				p.handleMethodResponse(reply)
 			}
+		case submit = <-p.SubmitChan:
+			p.handleSubmit(submit)
 		}
 	}
 }
@@ -355,12 +354,6 @@ func (p *Pool) processWork() {
 	if reloadVersions {
 		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 1, 10)
 		p.versions.Shuffle()
-		p.versionShuffles = 0
-	}
-	p.versionShuffles += 1
-	if p.versionShuffles >= 100 {
-		p.versions.Shuffle()
-		p.versionShuffles = 0
 	}
 	work.VersionsSource = p.versions
 	p.workChan <- work

@@ -4,7 +4,6 @@ import (
 	"gonum.org/v1/gonum/stat/combin"
 	"math/bits"
 	"math/rand"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -17,7 +16,6 @@ type Versions struct {
 	bitCount       int
 	RolledVersions []uint32
 	pos            int32
-	mtx            sync.Mutex
 }
 
 func NewVersions(version uint32, mask uint32, minVersionBits int, maxVersionBits int) *Versions {
@@ -40,7 +38,7 @@ func (vs *Versions) init() {
 		}
 		versionMask = versionMask >> 1
 	}
-	vs.RolledVersions = []uint32{0x20000000}
+	vs.RolledVersions = []uint32{vs.Version}
 	if vs.maxVersionBits >= vs.bitCount {
 		vs.maxVersionBits = vs.bitCount - 1
 	}

@@ -18,8 +18,7 @@ type Task struct {
 }
 
 func NewTask(jobId byte, versionsCount int) *Task {
-	maxLen := byte(20 + (32 * 4) + 2)
-	t := &Task{ITask: base.NewTask(int(jobId), versionsCount), jobId: jobId, data: make([]byte, maxLen)}
+	t := &Task{ITask: base.NewTask(int(jobId), versionsCount), jobId: jobId, data: make([]byte, 256)}
 	t.data[0] = 0x21
 	t.data[1] = 0x00
 	t.data[2] = t.jobId & 0x7f
@@ -34,7 +33,7 @@ func (t *Task) crc(dataLen byte, data []byte) {
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
-	return t.data[:t.data[1]], nil
+	return t.data[:], nil
 }
 
 func (t *Task) Update(task *stratum.Task) {
