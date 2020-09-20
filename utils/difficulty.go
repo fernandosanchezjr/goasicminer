@@ -7,7 +7,7 @@ import (
 
 const MaxRawDifficulty = 1000
 
-type Difficulty uint32
+type Difficulty uint64
 
 func (d Difficulty) String() string {
 	if d < MaxRawDifficulty {

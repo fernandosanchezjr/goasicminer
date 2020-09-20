@@ -9,13 +9,13 @@ type Task struct {
 	VersionRollingMask uint32
 	ExtraNonce2        uint64
 	NTime              uint32
-	Nbits              uint32
-	Midstates          [][32]byte
-	Endstate           [16]byte
-	Versions           []uint32
-	PlainHeader        [80]byte
-	reversed           bool
-	maxMidstates       int
+	//Nbits              uint32
+	Midstates    [][32]byte
+	Endstate     [16]byte
+	Versions     []uint32
+	PlainHeader  [80]byte
+	reversed     bool
+	maxMidstates int
 }
 
 func NewTask(maxMidstates int, reversed bool) *Task {
@@ -31,7 +31,7 @@ func (pt *Task) Update(pw *Work, versions []uint32) {
 	pt.VersionRollingMask = pw.VersionRollingMask
 	pt.ExtraNonce2 = pw.ExtraNonce2
 	pt.NTime = pw.Ntime
-	pt.Nbits = utils.CalculateCompactDifficulty(uint64(pw.Difficulty))
+	//pt.Nbits = utils.CalculateCompactDifficulty(uint64(pw.Difficulty))
 	copy(pt.PlainHeader[:], pw.PlainHeader())
 	copy(pt.Endstate[:], pt.PlainHeader[64:])
 	if pt.reversed {

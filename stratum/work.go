@@ -131,6 +131,7 @@ func (pw *Work) ExtraNonce2Mask() uint64 {
 	return 0xffffffffffffffff >> uint64(64-(pw.ExtraNonce2Len*8))
 }
 
-func (pw *Work) SetExtraNonce2(extraNonce uint64) {
+func (pw *Work) SetExtraNonce2(extraNonce uint64) uint64 {
 	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
+	return pw.ExtraNonce2
 }

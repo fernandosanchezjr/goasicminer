@@ -83,3 +83,13 @@ func (vs *Versions) Retrieve(dest []uint32) {
 		}
 	}
 }
+
+func (vs *Versions) Clone() *Versions {
+	ret := *vs
+	ret.RolledVersions = append([]uint32{}, vs.RolledVersions...)
+	return &ret
+}
+
+func (vs *Versions) RandomJump() {
+	vs.pos = int32(RandRange(0, len(vs.RolledVersions)))
+}

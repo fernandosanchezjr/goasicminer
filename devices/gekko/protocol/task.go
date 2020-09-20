@@ -41,10 +41,10 @@ func (t *Task) Update(task *stratum.Task) {
 	t.data[1] = byte(20 + (32 * versionCount) + 2)
 	t.data[2] = t.jobId & 0x7f
 	t.data[3] = byte(versionCount)
-	t.data[4] = byte(task.Nbits & 0xff)
-	t.data[5] = byte((task.Nbits >> 8) & 0xff)
-	t.data[6] = byte((task.Nbits >> 16) & 0xff)
-	t.data[7] = byte((task.Nbits >> 24) & 0xff)
+	//t.data[4] = byte(task.Nbits & 0xff)
+	//t.data[5] = byte((task.Nbits >> 8) & 0xff)
+	//t.data[6] = byte((task.Nbits >> 16) & 0xff)
+	//t.data[7] = byte((task.Nbits >> 24) & 0xff)
 	copy(t.data[8:], task.Endstate[4:])
 	start := 20
 	for _, midstate := range task.Midstates {

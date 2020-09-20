@@ -34,15 +34,15 @@ type IController interface {
 type Controller struct {
 	device       *ftdi.Device
 	driver       IDriver
-	done         func()
 	serialNumber string
 	workChan     stratum.PoolWorkChan
 	context      *Context
+	open         bool
 }
 
 func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
-	return &Controller{device: device, context: ctx, driver: driver, done: nil, serialNumber: serialNumber,
-		workChan: make(stratum.PoolWorkChan, 1)}
+	return &Controller{device: device, context: ctx, driver: driver, serialNumber: serialNumber,
+		workChan: make(stratum.PoolWorkChan, 1), open: true}
 }
 
 func (c *Controller) String() string {
@@ -61,10 +61,10 @@ func (c *Controller) recover() {
 
 func (c *Controller) Close() {
 	defer c.recover()
-	if c.done != nil {
-		c.done()
-		c.done = nil
+	if !c.open {
+		return
 	}
+	c.open = false
 	if err := c.device.Close(); err != nil {
 		log.Printf("Error closing %s: %s", c, err)
 	}

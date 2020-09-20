@@ -24,7 +24,7 @@ const (
 )
 
 const RetryTimeout = 5 * time.Second
-const MaxCommandAge = 1 * time.Minute
+const MaxCommandAge = 15 * time.Minute
 const CleanupTime = 1 * time.Minute
 const MaxPendingSubmits = 0xffff
 
@@ -330,7 +330,6 @@ func (p *Pool) processWork() {
 	if p.status != Authorized {
 		return
 	}
-	time.Sleep(1 * time.Second)
 	if p.subscription == nil {
 		return
 	}
