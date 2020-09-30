@@ -1,7 +1,9 @@
 package protocol
 
+import "github.com/fernandosanchezjr/goasicminer/utils"
+
 type TaskResponse struct {
-	Nonce uint32
+	Nonce utils.Nonce32
 	JobId int
 }
 
@@ -10,7 +12,7 @@ func NewTaskResponse() *TaskResponse {
 }
 
 func (tr *TaskResponse) UnmarshalBinary(data []byte) error {
-	tr.Nonce = uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
+	tr.Nonce = utils.Nonce32(data[0]) | utils.Nonce32(data[1])<<8 | utils.Nonce32(data[2])<<16 | utils.Nonce32(data[3])<<24
 	tr.JobId = int(data[5])
 	return nil
 }

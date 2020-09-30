@@ -15,7 +15,7 @@ func TestNewTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var versionMasks [4]uint32
+	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	pt := NewTask(4, true)
 	pt.Update(pw, versionMasks[:])
@@ -53,7 +53,7 @@ func BenchmarkNewTask(b *testing.B) {
 		b.Fatal(err)
 	}
 	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
-	var versionMasks [4]uint32
+	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	b.StartTimer()
 	task := NewTask(4, true)

@@ -5,8 +5,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
-	"log"
-	"os"
+	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
 )
@@ -24,8 +23,8 @@ type Governor struct {
 func NewGovernor(cfg *config.Config) *Governor {
 	poolCount := len(cfg.Pools)
 	if poolCount == 0 {
-		log.Println("No pools configured!")
-		os.Exit(-1)
+		log.Fatal("No pools configured!")
+		return nil
 	}
 	return &Governor{
 		Context:  base.NewContext(),
@@ -61,7 +60,10 @@ func (g *Governor) DeviceScan(work *stratum.Work) {
 		if controllers, err := cg.FindControllers(g.Context); err == nil {
 			for _, ct := range controllers {
 				if err := ct.Reset(); err != nil {
-					log.Printf("Error resetting %s: %s", ct, err)
+					log.WithFields(log.Fields{
+						"serial": ct.String(),
+						"error":  err,
+					}).Warnln("Error resetting controller")
 				} else if work != nil {
 					ct.UpdateWork(work)
 				}

@@ -3,7 +3,7 @@ package stratum
 import (
 	"encoding/hex"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"testing"
 )
 

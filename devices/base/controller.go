@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
-	"log"
 )
 
 var logDeviceTraffic bool
@@ -55,7 +55,10 @@ func (c *Controller) LongString() string {
 
 func (c *Controller) recover() {
 	if err := recover(); err != nil {
-		log.Println("recovering from", err)
+		log.WithFields(log.Fields{
+			"serial": c.String(),
+			"error":  err,
+		}).Warnln("Error recovery")
 	}
 }
 
@@ -66,12 +69,17 @@ func (c *Controller) Close() {
 	}
 	c.open = false
 	if err := c.device.Close(); err != nil {
-		log.Printf("Error closing %s: %s", c, err)
+		log.WithFields(log.Fields{
+			"serial": c.String(),
+			"error":  err,
+		}).Warnln("Close error")
 	}
 }
 
 func (c *Controller) Exit() {
-	log.Println(c.LongString(), "exiting")
+	log.WithFields(log.Fields{
+		"serial": c.String(),
+	}).Infoln("Controller exiting")
 	c.Close()
 	defer c.recover()
 	c.context.Unregister(c)

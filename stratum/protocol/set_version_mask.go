@@ -5,10 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/epiclabs-io/elastic"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
 type SetVersionMask struct {
-	VersionRollingMask uint32
+	VersionRollingMask utils.Version
 }
 
 func NewSetVersionMask(reply *Reply) (*SetVersionMask, error) {
@@ -26,7 +27,7 @@ func NewSetVersionMask(reply *Reply) (*SetVersionMask, error) {
 	if data, err := hex.DecodeString(versionRollingMask); err != nil {
 		return nil, err
 	} else {
-		svm.VersionRollingMask = binary.BigEndian.Uint32(data)
+		svm.VersionRollingMask = utils.Version(binary.BigEndian.Uint32(data))
 	}
 	return svm, nil
 }

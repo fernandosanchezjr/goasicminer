@@ -4,11 +4,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/epiclabs-io/elastic"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
 type ConfigureResponse struct {
 	VersionRolling     bool
-	VersionRollingMask uint32
+	VersionRollingMask utils.Version
 }
 
 func NewConfigureResponse(reply *Reply) (*ConfigureResponse, error) {
@@ -33,7 +34,7 @@ func NewConfigureResponse(reply *Reply) (*ConfigureResponse, error) {
 	if data, err := hex.DecodeString(versionRollingMask); err != nil {
 		return nil, err
 	} else {
-		cr.VersionRollingMask = binary.BigEndian.Uint32(data)
+		cr.VersionRollingMask = utils.Version(binary.BigEndian.Uint32(data))
 	}
 	return cr, nil
 }

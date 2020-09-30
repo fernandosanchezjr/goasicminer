@@ -2,7 +2,7 @@ package stratum
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/config"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"testing"
 	"time"
 )

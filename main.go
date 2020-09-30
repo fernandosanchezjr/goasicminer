@@ -2,36 +2,30 @@ package main
 
 import (
 	"flag"
+	client2 "github.com/fernandosanchezjr/goasicminer/backend/services/shim"
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/governor"
-	"log"
+	"github.com/fernandosanchezjr/goasicminer/logging"
+	"github.com/fernandosanchezjr/goasicminer/networking/client"
+	"github.com/fernandosanchezjr/goasicminer/networking/services"
+	"github.com/fernandosanchezjr/goasicminer/utils"
+	log "github.com/sirupsen/logrus"
 	"os"
-	"os/signal"
 	"runtime/pprof"
 	"runtime/trace"
 )
 
 var cpuProfile bool
 var tracing bool
-var exitChannel chan os.Signal
 
 func init() {
 	flag.BoolVar(&cpuProfile, "cpu-profile", cpuProfile, "enable cpu profiling")
 	flag.BoolVar(&tracing, "trace", tracing, "enable tracing")
-	exitChannel = make(chan os.Signal, 1)
-}
-
-func wait() {
-	signal.Notify(exitChannel, os.Interrupt)
-	signal.Notify(exitChannel, os.Kill)
-	select {
-	case <-exitChannel:
-		return
-	}
 }
 
 func main() {
 	flag.Parse()
+	logging.SetupLogger()
 	if cpuProfile {
 		f, err := os.Create("goasicminer.prof")
 		if err != nil {
@@ -56,8 +50,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if cfg.BackendAddress != "" {
+		registry := services.NewRegistry()
+		registry.AddService("Logging", client2.NewLogging())
+		registry.AddService("CheckIn", client2.NewCheckIn())
+		cl := client.NewClient(cfg.BackendAddress, registry)
+		cl.Start()
+		defer cl.Stop()
+		logIngestHook := logging.NewIngestHook(cl)
+		log.AddHook(logIngestHook)
+		if _, err := cl.Call("CheckIn", "Host", logIngestHook.HostName); err != nil {
+			log.WithError(err).Error("CheckIn error")
+		}
+	}
 	gov := governor.NewGovernor(cfg)
 	gov.Start()
-	wait()
+	utils.Wait()
 	gov.Stop()
 }

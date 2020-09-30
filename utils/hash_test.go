@@ -2,7 +2,7 @@ package utils
 
 import (
 	"encoding/hex"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"testing"
 )
 

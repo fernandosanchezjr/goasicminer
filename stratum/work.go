@@ -10,19 +10,19 @@ import (
 
 type Work struct {
 	ExtraNonce1        uint64
-	ExtraNonce2        uint64
+	ExtraNonce2        utils.Nonce64
 	ExtraNonce2Len     int
 	VersionRolling     bool
-	VersionRollingMask uint32
+	VersionRollingMask utils.Version
 	Difficulty         utils.Difficulty
 	JobId              string
-	PrevHash           []byte
+	PrevHash           [32]byte
 	CoinBase1          []byte
 	CoinBase2          []byte
 	MerkleBranches     [][]byte
-	Version            uint32
+	Version            utils.Version
 	Nbits              uint32
-	Ntime              uint32
+	Ntime              utils.NTime
 	CleanJobs          bool
 	Nonce              uint32
 	Pool               *Pool
@@ -104,7 +104,7 @@ func (pw *Work) PlainHeader() []byte {
 	pw.plainHeader[1] = byte((pw.Version >> 16) & 0xff)
 	pw.plainHeader[2] = byte((pw.Version >> 8) & 0xff)
 	pw.plainHeader[3] = byte(pw.Version & 0xff)
-	copy(pw.plainHeader[4:36], pw.PrevHash)
+	copy(pw.plainHeader[4:36], pw.PrevHash[:])
 	copy(pw.plainHeader[36:68], pw.MerkleRoot())
 	pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
 	pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
@@ -127,11 +127,11 @@ func (pw *Work) Clone() *Work {
 	return &result
 }
 
-func (pw *Work) ExtraNonce2Mask() uint64 {
+func (pw *Work) ExtraNonce2Mask() utils.Nonce64 {
 	return 0xffffffffffffffff >> uint64(64-(pw.ExtraNonce2Len*8))
 }
 
-func (pw *Work) SetExtraNonce2(extraNonce uint64) uint64 {
+func (pw *Work) SetExtraNonce2(extraNonce utils.Nonce64) utils.Nonce64 {
 	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
 	return pw.ExtraNonce2
 }

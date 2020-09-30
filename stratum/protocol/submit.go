@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
 type Submit struct {
@@ -11,22 +12,22 @@ type Submit struct {
 
 func NewSubmit(
 	jobId string,
-	extraNonce2 uint64,
-	ntime uint32,
-	nonce uint32,
-	version uint32,
+	extraNonce2 utils.Nonce64,
+	ntime utils.NTime,
+	nonce utils.Nonce32,
+	version utils.Version,
 ) *Submit {
 	var extraNonceB [8]byte
-	binary.LittleEndian.PutUint64(extraNonceB[:], extraNonce2)
+	binary.LittleEndian.PutUint64(extraNonceB[:], uint64(extraNonce2))
 	params := []interface{}{
 		"",
 		jobId,
 		fmt.Sprintf("%x", extraNonceB),
-		fmt.Sprintf("%08x", ntime),
-		fmt.Sprintf("%08x", nonce),
+		ntime.String(),
+		nonce.String(),
 	}
 	if version != 0 {
-		params = append(params, fmt.Sprintf("%08x", version))
+		params = append(params, version.String())
 	}
 	return &Submit{&Method{
 		Id:         0,

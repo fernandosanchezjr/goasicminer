@@ -2,6 +2,7 @@ package base
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	"sync"
 )
 
@@ -11,7 +12,7 @@ type ITask interface {
 	MarshalBinary() ([]byte, error)
 	Index() int
 	Update(task *stratum.Task)
-	UpdateResult(tr *TaskResult, nonce uint32, versionIndex int)
+	UpdateResult(tr *TaskResult, nonce utils.Nonce32, versionIndex int)
 	VersionsCount() int
 	GetJobId() string
 }
@@ -19,11 +20,11 @@ type ITask interface {
 type Task struct {
 	index              int
 	JobId              string
-	VersionRollingMask uint32
-	ExtraNonce2        uint64
-	NTime              uint32
-	Nonce              uint32
-	Versions           []uint32
+	VersionRollingMask utils.Version
+	ExtraNonce2        utils.Nonce64
+	NTime              utils.NTime
+	Nonce              utils.Nonce32
+	Versions           []utils.Version
 	PlainHeader        [80]byte
 	Pool               *stratum.Pool
 	operation          uint64
@@ -34,7 +35,7 @@ type Task struct {
 }
 
 func NewTask(index int, versionsCount int) *Task {
-	return &Task{index: index, Versions: make([]uint32, versionsCount), nextOp: make(chan uint64)}
+	return &Task{index: index, Versions: make([]utils.Version, versionsCount), nextOp: make(chan uint64)}
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
@@ -54,7 +55,7 @@ func (t *Task) Update(task *stratum.Task) {
 	copy(t.PlainHeader[:], task.PlainHeader[:])
 }
 
-func (t *Task) UpdateResult(tr *TaskResult, nonce uint32, versionIndex int) {
+func (t *Task) UpdateResult(tr *TaskResult, nonce utils.Nonce32, versionIndex int) {
 	copy(tr.PlainHeader[:], t.PlainHeader[:])
 	tr.JobId = t.JobId
 	tr.Version = t.Versions[versionIndex]

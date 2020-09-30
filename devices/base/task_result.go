@@ -7,10 +7,10 @@ import (
 
 type TaskResult struct {
 	JobId       string
-	Version     uint32
-	ExtraNonce2 uint64
-	NTime       uint32
-	Nonce       uint32
+	Version     utils.Version
+	ExtraNonce2 utils.Nonce64
+	NTime       utils.NTime
+	Nonce       utils.Nonce32
 	PlainHeader [80]byte
 	diffInt     *big.Int
 }

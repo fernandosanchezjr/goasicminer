@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -18,7 +18,7 @@ type Direction int
 var logRPC bool
 
 func init() {
-	flag.BoolVar(&logRPC, "log-rpc", false, "log RPC traffic")
+	flag.BoolVar(&logRPC, "log-rpctest", false, "log RPC traffic")
 }
 
 type Connection struct {
@@ -77,16 +77,20 @@ func (c *Connection) NextId() uint64 {
 
 func (c *Connection) logRPC(prefix string, value interface{}) {
 	if data, err := json.Marshal(value); err != nil {
-		log.Println("Debug marshaling error:", err)
+		log.WithFields(log.Fields{
+			"error": err,
+		}).Warnln("RPC marshalling error")
 	} else {
-		log.Println(prefix, string(data))
+		log.WithFields(log.Fields{
+			"data": data,
+		}).Infoln(prefix)
 	}
 }
 
 func (c *Connection) Call(command protocol.IMethod) error {
 	command.SetId(c.NextId())
 	if logRPC {
-		c.logRPC("RPC out:", command)
+		c.logRPC("RPC out", command)
 	}
 	return c.writer.Encode(command)
 }
@@ -98,11 +102,13 @@ func (c *Connection) replyLoop() {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return
 			} else {
-				log.Println("Decode err:", err)
+				log.WithFields(log.Fields{
+					"error": err,
+				}).Warnln("RPC decode error")
 			}
 		} else {
 			if logRPC {
-				c.logRPC("RPC in:", r)
+				c.logRPC("RPC in", r)
 			}
 			c.replyChan <- r
 			r = &protocol.Reply{}

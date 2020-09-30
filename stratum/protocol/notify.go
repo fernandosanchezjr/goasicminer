@@ -5,17 +5,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/epiclabs-io/elastic"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 )
 
 type Notify struct {
 	JobId          string
-	PrevHash       []byte
+	PrevHash       [32]byte
 	CoinBase1      []byte
 	CoinBase2      []byte
 	MerkleBranches [][]byte
-	Version        uint32
+	Version        utils.Version
 	NBits          uint32
-	NTime          uint32
+	NTime          utils.NTime
 	CleanJobs      bool
 }
 
@@ -35,7 +36,7 @@ func NewNotify(reply *Reply) (*Notify, error) {
 	if data, err := hex.DecodeString(prevHash); err != nil {
 		return nil, err
 	} else {
-		n.PrevHash = data
+		copy(n.PrevHash[:], data)
 	}
 	if err := elastic.Set(&coinb1, reply.Params[2]); err != nil {
 		return nil, err
@@ -70,7 +71,7 @@ func NewNotify(reply *Reply) (*Notify, error) {
 	if data, err := hex.DecodeString(version); err != nil {
 		return nil, err
 	} else {
-		n.Version = binary.BigEndian.Uint32(data)
+		n.Version = utils.Version(binary.BigEndian.Uint32(data))
 	}
 	if err := elastic.Set(&nbits, reply.Params[6]); err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func NewNotify(reply *Reply) (*Notify, error) {
 	if data, err := hex.DecodeString(ntime); err != nil {
 		return nil, err
 	} else {
-		n.NTime = binary.BigEndian.Uint32(data)
+		n.NTime = utils.NTime(binary.BigEndian.Uint32(data))
 	}
 	if err := elastic.Set(&n.CleanJobs, reply.Params[8]); err != nil {
 		return nil, err

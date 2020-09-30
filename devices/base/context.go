@@ -83,9 +83,9 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	}
 	for _, ct := range c.controllers {
 		if UseRandomExtraNonce2 {
-			work.SetExtraNonce2(utils.RandomUint64())
+			work.SetExtraNonce2(utils.Nonce64(utils.RandomUint64()))
 		} else if UseBiasedExtraNonce2 {
-			work.SetExtraNonce2(utils.Random(8.0))
+			work.SetExtraNonce2(utils.Nonce64(utils.Random(8.0)))
 		} else {
 			work.ExtraNonce2 = 0
 		}

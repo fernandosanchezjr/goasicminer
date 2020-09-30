@@ -5,7 +5,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
 )
@@ -68,7 +68,10 @@ func (p *Pool) Start() {
 }
 
 func (p *Pool) Stop() {
-	log.Println("Stopping pool", p)
+	log.WithFields(log.Fields{
+		"url":  p.config.URL,
+		"user": p.config.User,
+	}).Println("Stopping pool")
 	close(p.quit)
 	p.wg.Wait()
 }
@@ -132,13 +135,22 @@ func (p *Pool) loop() {
 }
 
 func (p *Pool) retryTimeout() {
-	log.Println("Retrying in", RetryTimeout)
+	log.WithFields(log.Fields{
+		"url":     p.config.URL,
+		"user":    p.config.User,
+		"timeout": RetryTimeout,
+	}).Println("Pool retrying")
 	time.Sleep(RetryTimeout)
 }
 
 func (p *Pool) disconnect() {
 	if err := p.conn.Close(); err != nil {
-		log.Println("Pool", p, "disconnect error:", err)
+		log.WithFields(log.Fields{
+			"url":     p.config.URL,
+			"user":    p.config.User,
+			"timeout": RetryTimeout,
+			"error":   err,
+		}).Println("Pool disconnect error")
 	}
 	p.conn = nil
 	p.status = Disconnected
@@ -154,7 +166,11 @@ func (p *Pool) handleQuit() {
 
 func (p *Pool) handleDisconnected() {
 	if conn, err := NewConnection(p.config.URL, p.ReplyChan); err != nil {
-		log.Println("Error connecting to pool", p.config.URL, "-", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool connection error")
 		p.retryTimeout()
 	} else {
 		p.conn = conn
@@ -175,10 +191,17 @@ func (p *Pool) removePendingCommand(cmd protocol.IMethod) {
 }
 
 func (p *Pool) handleConnected() {
-	log.Println("Connected to", p)
+	log.WithFields(log.Fields{
+		"url":  p.config.URL,
+		"user": p.config.User,
+	}).Println("Pool connected")
 	subscribe := protocol.NewSubscribe()
 	if err := p.conn.Call(subscribe); err != nil {
-		log.Println("Pool", p, "subscribe error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool subscribe error")
 		p.retryTimeout()
 		p.disconnect()
 	} else {
@@ -188,10 +211,17 @@ func (p *Pool) handleConnected() {
 }
 
 func (p *Pool) handleSubscribed() {
-	log.Println("Subscribed to", p)
+	log.WithFields(log.Fields{
+		"url":  p.config.URL,
+		"user": p.config.User,
+	}).Println("Pool subscribed")
 	configure := protocol.NewConfigure()
 	if err := p.conn.Call(configure); err != nil {
-		log.Println("Pool", p, "configuration error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool configure error")
 		p.retryTimeout()
 		p.disconnect()
 	} else {
@@ -203,7 +233,11 @@ func (p *Pool) handleSubscribed() {
 func (p *Pool) handleConfigured() {
 	authorize := protocol.NewAuthorize(p.config.User, p.config.Pass)
 	if err := p.conn.Call(authorize); err != nil {
-		log.Println("Pool", p, "authorization error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool authorize error")
 		p.retryTimeout()
 		p.disconnect()
 	} else {
@@ -218,7 +252,11 @@ func (p *Pool) handleSubmit(submit *protocol.Submit) {
 		return
 	}
 	if err := p.conn.Call(submit); err != nil {
-		log.Println("Pool", p, "submit error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool submit error")
 		p.retryTimeout()
 		p.disconnect()
 	} else {
@@ -236,14 +274,22 @@ func (p *Pool) getPendingCommand(id uint64) (protocol.IMethod, bool) {
 func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	method, ok := p.getPendingCommand(reply.Id)
 	if !ok {
-		log.Println("Pool", p, "received unknown reply:", reply)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"reply": reply,
+		}).Println("Unknown reply from pool")
 		return
 	}
 	switch m := method.(type) {
 	case *protocol.Subscribe:
 		p.removePendingCommand(m)
 		if sr, err := protocol.NewSubscribeResponse(reply); err != nil {
-			log.Println("Pool", p, "subscribe response error:", err)
+			log.WithFields(log.Fields{
+				"url":   p.config.URL,
+				"user":  p.config.User,
+				"error": err,
+			}).Println("Pool subscribe response error")
 		} else {
 			p.subscription = sr
 			p.status = Subscribed
@@ -251,14 +297,25 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	case *protocol.Authorize:
 		p.removePendingCommand(m)
 		if ar, err := protocol.NewAuthorizeResponse(reply); err != nil {
-			log.Println("Pool", p, "authorize response error:", err)
+			log.WithFields(log.Fields{
+				"url":   p.config.URL,
+				"user":  p.config.User,
+				"error": err,
+			}).Println("Pool authorize response error")
 		} else {
 			if ar.Result {
 				p.status = Authorized
-				log.Println("Pool", p, "authorized")
+				log.WithFields(log.Fields{
+					"url":  p.config.URL,
+					"user": p.config.User,
+				}).Println("Pool authorized")
 				p.processWork()
 			} else {
-				log.Println("Pool", p, "autorization failed")
+				log.WithFields(log.Fields{
+					"url":    p.config.URL,
+					"user":   p.config.User,
+					"result": ar.Result,
+				}).Println("Pool authorization failed")
 				p.retryTimeout()
 				p.disconnect()
 			}
@@ -266,7 +323,11 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	case *protocol.Configure:
 		p.removePendingCommand(m)
 		if cr, err := protocol.NewConfigureResponse(reply); err != nil {
-			log.Println("Pool", p, "configure response error:", err)
+			log.WithFields(log.Fields{
+				"url":   p.config.URL,
+				"user":  p.config.User,
+				"error": err,
+			}).Println("Pool configure response error")
 		} else {
 			p.status = Configured
 			p.configuration = cr
@@ -274,10 +335,18 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 	case *protocol.Submit:
 		p.removePendingCommand(m)
 		if reply.Error != nil {
-			log.Println("Pool submit error:", reply.Error)
+			log.WithFields(log.Fields{
+				"url":   p.config.URL,
+				"user":  p.config.User,
+				"error": reply.Error,
+			}).Println("Pool submit error")
 		}
 	default:
-		log.Println("Pool", p, "received unknown response:", reply)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"reply": reply,
+		}).Println("Unknown reply from pool")
 	}
 }
 
@@ -290,15 +359,27 @@ func (p *Pool) handleMethodCall(reply *protocol.Reply) {
 	case "mining.set_version_mask":
 		p.handleSetVersionMask(reply)
 	default:
-		log.Println("Pool", p, "received unknown remote method:", reply)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": reply,
+		}).Println("Pool sent unknown method")
 	}
 }
 
 func (p *Pool) handleMiningSetDifficulty(reply *protocol.Reply) {
 	if sd, err := protocol.NewSetDifficulty(reply); err != nil {
-		log.Println("Pool", p, "SetDifficulty error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool SetDifficulty error")
 	} else {
-		log.Println("Pool", p, "set difficulty to", sd)
+		log.WithFields(log.Fields{
+			"url":        p.config.URL,
+			"user":       p.config.User,
+			"difficulty": sd.Difficulty,
+		}).Println("Pool set difficulty")
 		p.setDifficulty = sd
 		p.processWork()
 	}
@@ -306,7 +387,11 @@ func (p *Pool) handleMiningSetDifficulty(reply *protocol.Reply) {
 
 func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 	if n, err := protocol.NewNotify(reply); err != nil {
-		log.Println("Pool", p, "Notify error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool Notify error")
 	} else {
 		p.notify = n
 		p.processWork()
@@ -315,7 +400,11 @@ func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 
 func (p *Pool) handleSetVersionMask(reply *protocol.Reply) {
 	if svm, err := protocol.NewSetVersionMask(reply); err != nil {
-		log.Println("Pool", p, "SetVersionMask error:", err)
+		log.WithFields(log.Fields{
+			"url":   p.config.URL,
+			"user":  p.config.User,
+			"error": err,
+		}).Println("Pool SetVersionMask error")
 	} else {
 		p.configuration.VersionRollingMask = svm.VersionRollingMask
 		p.processWork()
@@ -356,4 +445,12 @@ func (p *Pool) processWork() {
 	}
 	work.VersionsSource = p.versions
 	p.workChan <- work
+	log.WithFields(log.Fields{
+		"url":        p.config.URL,
+		"user":       p.config.User,
+		"jobId":      work.JobId,
+		"difficulty": work.Difficulty,
+		"ntime":      work.Ntime,
+		"prevHash":   utils.HashToString(work.PrevHash),
+	}).Infoln("New work")
 }

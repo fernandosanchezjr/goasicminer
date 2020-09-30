@@ -9,17 +9,17 @@ import (
 )
 
 type Versions struct {
-	Version        uint32
-	Mask           uint32
+	Version        Version
+	Mask           Version
 	minVersionBits int
 	maxVersionBits int
 	bitCount       int
-	RolledVersions []uint32
+	RolledVersions []Version
 	pos            int32
 }
 
-func NewVersions(version uint32, mask uint32, minVersionBits int, maxVersionBits int) *Versions {
-	bitCount := bits.OnesCount32(mask)
+func NewVersions(version Version, mask Version, minVersionBits int, maxVersionBits int) *Versions {
+	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &Versions{Version: version, Mask: mask, bitCount: bitCount, minVersionBits: minVersionBits,
 		maxVersionBits: maxVersionBits}
 	vs.init()
@@ -27,7 +27,7 @@ func NewVersions(version uint32, mask uint32, minVersionBits int, maxVersionBits
 }
 
 func (vs *Versions) init() {
-	var tmpMask uint32
+	var tmpMask Version
 	versionMask := vs.Mask
 	bitPositions := make([]int, vs.bitCount)
 	pos := 0
@@ -38,7 +38,7 @@ func (vs *Versions) init() {
 		}
 		versionMask = versionMask >> 1
 	}
-	vs.RolledVersions = []uint32{vs.Version}
+	vs.RolledVersions = []Version{vs.Version}
 	if vs.maxVersionBits >= vs.bitCount {
 		vs.maxVersionBits = vs.bitCount - 1
 	}
@@ -70,7 +70,7 @@ func (vs *Versions) Shuffle() {
 	})
 }
 
-func (vs *Versions) Retrieve(dest []uint32) {
+func (vs *Versions) Retrieve(dest []Version) {
 	destCount := len(dest)
 	rolledCount := int32(len(vs.RolledVersions))
 	if destCount == 0 {
@@ -86,7 +86,7 @@ func (vs *Versions) Retrieve(dest []uint32) {
 
 func (vs *Versions) Clone() *Versions {
 	ret := *vs
-	ret.RolledVersions = append([]uint32{}, vs.RolledVersions...)
+	ret.RolledVersions = append([]Version{}, vs.RolledVersions...)
 	return &ret
 }
 

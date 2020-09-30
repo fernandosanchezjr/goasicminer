@@ -8,8 +8,8 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	protocol2 "github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
+	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
-	"log"
 	"math/big"
 	"strings"
 	"sync"
@@ -50,7 +50,7 @@ type BM1387Controller struct {
 	fullscanDuration   time.Duration
 	maxTaskWait        time.Duration
 	currentDiff        *big.Int
-	poolVersion        uint32
+	poolVersion        utils.Version
 	poolVersionRolling bool
 	shuttingDown       bool
 	submitChan         chan *protocol2.Submit
@@ -107,7 +107,10 @@ func (bm *BM1387Controller) Close() {
 
 func (bm *BM1387Controller) Reset() error {
 	defer bm.loopRecover("init")
-	log.Println("Resetting", bm.LongString())
+	log.WithFields(log.Fields{
+		"serial": bm.String(),
+		"driver": bm.Driver().String(),
+	}).Infoln("Resetting")
 	if err := bm.performReset(); err != nil {
 		go bm.Exit()
 		return err
@@ -116,7 +119,10 @@ func (bm *BM1387Controller) Reset() error {
 		go bm.Exit()
 		return err
 	} else {
-		log.Println(bm.LongString(), "found", bm.chipCount, "chips")
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"chips":  bm.chipCount,
+		}).Infoln("Found chips")
 	}
 	if err := bm.sendChainInactive(); err != nil {
 		return err
@@ -132,7 +138,9 @@ func (bm *BM1387Controller) Reset() error {
 		go bm.Exit()
 		return err
 	}
-	log.Println(bm.LongString(), "reset")
+	log.WithFields(log.Fields{
+		"serial": bm.String(),
+	}).Infoln("Reset")
 	return nil
 }
 
@@ -301,9 +309,12 @@ func (bm *BM1387Controller) setTiming() {
 	var hashRate utils.HashRate
 	hashRate, bm.fullscanDuration, bm.maxTaskWait = protocol.Timing(bm.chipCount, bm.frequency, BM1387NumCores,
 		BM1387WaitFactor)
-	log.Println("Hash rate:", hashRate)
-	log.Println("Full scan time:", bm.fullscanDuration)
-	log.Println("Max task wait:", bm.maxTaskWait)
+	log.WithFields(log.Fields{
+		"serial":       bm.String(),
+		"hashRate":     hashRate,
+		"fullScanTime": bm.fullscanDuration,
+		"maxTaskWait":  bm.maxTaskWait,
+	}).Infoln("Timing set up")
 }
 
 func (bm *BM1387Controller) initializeTasks() error {
@@ -319,7 +330,11 @@ func (bm *BM1387Controller) initializeTasks() error {
 func (bm *BM1387Controller) loopRecover(loopName string) {
 	if err := recover(); err != nil {
 		if !strings.Contains(fmt.Sprint(err), "send on closed channel") {
-			log.Printf("Error in %s loop: %s", loopName, err)
+			log.WithFields(log.Fields{
+				"serial": bm.String(),
+				"loop":   loopName,
+				"error":  err,
+			}).Warnln("Loop error")
 		}
 		bm.waiter.Done()
 		if !bm.shuttingDown {
@@ -357,7 +372,10 @@ func (bm *BM1387Controller) readLoop() {
 		case <-mainTicker.C:
 			rb.Count = 0
 			if read, err = bm.Read(buf); err != nil {
-				log.Println("Error reading response block:", err)
+				log.WithFields(log.Fields{
+					"serial": bm.String(),
+					"error":  err,
+				}).Warnln("Error reading response block")
 				mainTicker.Stop()
 				bm.waiter.Done()
 				go bm.Exit()
@@ -374,7 +392,10 @@ func (bm *BM1387Controller) readLoop() {
 				continue
 			}
 			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
-				log.Println("Error decoding response block:", err)
+				log.WithFields(log.Fields{
+					"serial": bm.String(),
+					"error":  err,
+				}).Warnln("Error decoding response block")
 				continue
 			}
 			missingLoops = 0
@@ -412,7 +433,7 @@ func (bm *BM1387Controller) writeLoop() {
 	var task *stratum.Task
 	var work *stratum.Work
 	workChan := bm.WorkChannel()
-	var versionMasks [BM1387MidstateCount]uint32
+	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
 	var diff big.Int
@@ -456,7 +477,7 @@ func (bm *BM1387Controller) writeLoop() {
 				bm.versionSource.RandomJump()
 			}
 			if base.UseBiasedExtraNonce2 {
-				work.SetExtraNonce2(utils.Random(8.0))
+				work.SetExtraNonce2(utils.Nonce64(utils.Random(8.0)))
 			}
 			bm.versionSource.Retrieve(versionMasks[:])
 		case <-mainTicker.C:
@@ -468,7 +489,10 @@ func (bm *BM1387Controller) writeLoop() {
 				panic(err)
 			} else {
 				if _, err = bm.Write(data); err != nil {
-					log.Println("USB write error:", err)
+					log.WithFields(log.Fields{
+						"serial": bm.String(),
+						"error":  err,
+					}).Warnln("USB write error")
 					bm.waiter.Done()
 					go bm.Exit()
 					return
@@ -486,7 +510,7 @@ func (bm *BM1387Controller) writeLoop() {
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
 				if base.UseRandomExtraNonce2 {
-					work.SetExtraNonce2(utils.RandomUint64())
+					work.SetExtraNonce2(utils.Nonce64(utils.RandomUint64()))
 				} else {
 					work.SetExtraNonce2(work.ExtraNonce2 + 1)
 				}
@@ -506,7 +530,7 @@ func (bm *BM1387Controller) verifyLoop() {
 	var resultDiff big.Int
 	var hashBig big.Int
 	var match bool
-	var submitVersion uint32
+	var submitVersion utils.Version
 	var maxDiff, diff utils.Difficulty
 	var lastMatchTime time.Time = time.Now()
 	stallTicker := time.NewTicker(time.Second)
@@ -538,13 +562,22 @@ func (bm *BM1387Controller) verifyLoop() {
 				)
 				utils.CalculateDifficulty(&hashBig, &resultDiff)
 				diff = utils.Difficulty(resultDiff.Int64())
-				log.Printf("%s job %s extra nonce2 %016x ntime %08x nonce %08x version %08x diff %s",
-					bm, verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce,
-					verifyTask.Version, diff)
+				log.WithFields(log.Fields{
+					"serial":      bm.String(),
+					"jobId":       verifyTask.JobId,
+					"extraNonce2": verifyTask.ExtraNonce2,
+					"nTime":       verifyTask.NTime,
+					"nonce":       verifyTask.Nonce,
+					"version":     verifyTask.Version,
+					"difficulty":  diff,
+				}).Infoln("Result")
 				diffIncreased = diff > maxDiff
 				if diffIncreased {
 					maxDiff = diff
-					log.Printf("%s best share: %s", bm, maxDiff)
+					log.WithFields(log.Fields{
+						"serial": bm.String(),
+						"diff":   maxDiff,
+					}).Infoln("Best share")
 				}
 				lastMatchTime = time.Now()
 			}

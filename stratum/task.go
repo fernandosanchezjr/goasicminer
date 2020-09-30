@@ -6,16 +6,15 @@ import (
 
 type Task struct {
 	JobId              string
-	VersionRollingMask uint32
-	ExtraNonce2        uint64
-	NTime              uint32
-	//Nbits              uint32
-	Midstates    [][32]byte
-	Endstate     [16]byte
-	Versions     []uint32
-	PlainHeader  [80]byte
-	reversed     bool
-	maxMidstates int
+	VersionRollingMask utils.Version
+	ExtraNonce2        utils.Nonce64
+	NTime              utils.NTime
+	Midstates          [][32]byte
+	Endstate           [16]byte
+	Versions           []utils.Version
+	PlainHeader        [80]byte
+	reversed           bool
+	maxMidstates       int
 }
 
 func NewTask(maxMidstates int, reversed bool) *Task {
@@ -26,7 +25,7 @@ func NewTask(maxMidstates int, reversed bool) *Task {
 	return pt
 }
 
-func (pt *Task) Update(pw *Work, versions []uint32) {
+func (pt *Task) Update(pw *Work, versions []utils.Version) {
 	pt.JobId = pw.JobId
 	pt.VersionRollingMask = pw.VersionRollingMask
 	pt.ExtraNonce2 = pw.ExtraNonce2
@@ -40,10 +39,10 @@ func (pt *Task) Update(pw *Work, versions []uint32) {
 		}
 	}
 	if !pw.VersionRolling {
-		pt.Versions = []uint32{pw.Version}
+		pt.Versions = []utils.Version{pw.Version}
 		pt.Midstates = [][32]byte{utils.Midstate(pt.PlainHeader[:64])}
 	} else {
-		pt.Versions = make([]uint32, pt.maxMidstates)
+		pt.Versions = make([]utils.Version, pt.maxMidstates)
 		pt.Midstates = make([][32]byte, pt.maxMidstates)
 		copy(pt.Versions, versions)
 		for i, version := range pt.Versions {
@@ -69,7 +68,7 @@ func (pt *Task) Update(pw *Work, versions []uint32) {
 	}
 }
 
-func (pt *Task) IncreaseNTime(delta uint32) {
+func (pt *Task) IncreaseNTime(delta utils.NTime) {
 	if delta == 0 {
 		return
 	}
