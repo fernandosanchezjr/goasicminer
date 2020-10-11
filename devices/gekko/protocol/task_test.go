@@ -14,7 +14,7 @@ func TestTask_TestEncodeNoBoost(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(4)
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(1, true)
@@ -38,7 +38,7 @@ func TestTask_TestEncodeBoost(t *testing.T) {
 		t.Fatal(err)
 	}
 	pw.SetExtraNonce2(4)
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(4, true)
@@ -48,8 +48,8 @@ func TestTask_TestEncodeBoost(t *testing.T) {
 	data, _ := task.MarshalBinary()
 	hexData := hex.EncodeToString(data)
 	if hexData != "2196740400000000ea07101775424c5f69aa3fa0e3ff3bf3977a3140423c727f895210de0c6e467e18269b6d1936c98fd8"+
-		"ede8c4e1ce4216a7de12fb74e694416ba7b3ed12ea12b56bbbac1fa7d97d1ee2367ee3b01463e804106098afdb3734b57f7d72b47001"+
-		"b5fce77421f8c1b0ad71201c0ce1caa78738d0fbbc3f2e01e09bd2c1a5de05c902a909acdd94c6b29fbded9d00c8fc00000000000000"+
+		"ede8c4d475dba7c1096956d79ab6b4240c70dc8ff694b1aa35a0cc8f566df9b177a6fc211bfa42e6c8b0127149c2c635e7062c70b012"+
+		"0958c430b7dac7d056d5c888e1ea7a2f31209cee57cec6c0deb39fc3484818ca7dd86ddfc6598009ca24471243890600000000000000"+
 		"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"+
 		"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" {
 		t.Fatal(hexData)
@@ -61,7 +61,7 @@ func BenchmarkTask_Update(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(4, true)
@@ -69,7 +69,6 @@ func BenchmarkTask_Update(b *testing.B) {
 	task := NewTask(0x75, 4)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		pt.IncreaseNTime(utils.NTime(i))
 		task.Update(pt)
 	}
 	b.StopTimer()
@@ -80,7 +79,7 @@ func TestTask_Result(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	pt := stratum.NewTask(1, true)

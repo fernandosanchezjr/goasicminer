@@ -3,7 +3,7 @@ package charting
 import "time"
 
 type Data struct {
-	X            []time.Time
+	X            []interface{}
 	Y            []interface{}
 	Label        []string
 	uniqueLabels map[string]bool
@@ -14,7 +14,7 @@ func NewData() *Data {
 }
 
 func (ld *Data) Append(x time.Time, y interface{}, label string) {
-	ld.X = append(ld.X, x)
+	ld.X = append(ld.X, x.Format("2006-01-02T15:04:05"))
 	ld.Y = append(ld.Y, y)
 	ld.Label = append(ld.Label, label)
 	ld.uniqueLabels[label] = true
@@ -22,7 +22,7 @@ func (ld *Data) Append(x time.Time, y interface{}, label string) {
 
 func (ld *Data) Clone() *Data {
 	return &Data{
-		X:            append([]time.Time{}, ld.X...),
+		X:            append([]interface{}{}, ld.X...),
 		Y:            append([]interface{}{}, ld.Y...),
 		Label:        append([]string{}, ld.Label...),
 		uniqueLabels: map[string]bool{}}

@@ -3,7 +3,6 @@ package base
 import (
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"sync"
 )
 
 type TaskType byte
@@ -27,15 +26,10 @@ type Task struct {
 	Versions           []utils.Version
 	PlainHeader        [80]byte
 	Pool               *stratum.Pool
-	operation          uint64
-	quit               chan struct{}
-	wg                 sync.WaitGroup
-	nextOp             chan uint64
-	mtx                sync.Mutex
 }
 
 func NewTask(index int, versionsCount int) *Task {
-	return &Task{index: index, Versions: make([]utils.Version, versionsCount), nextOp: make(chan uint64)}
+	return &Task{index: index, Versions: make([]utils.Version, versionsCount)}
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
@@ -59,6 +53,7 @@ func (t *Task) UpdateResult(tr *TaskResult, nonce utils.Nonce32, versionIndex in
 	copy(tr.PlainHeader[:], t.PlainHeader[:])
 	tr.JobId = t.JobId
 	tr.Version = t.Versions[versionIndex]
+	tr.Midstate = int32(versionIndex)
 	tr.ExtraNonce2 = t.ExtraNonce2
 	tr.NTime = t.NTime
 	tr.Nonce = nonce

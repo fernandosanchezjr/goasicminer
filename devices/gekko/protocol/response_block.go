@@ -29,6 +29,9 @@ func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
 			}
 			data = data[7:]
 			rb.Count += 1
+			if rb.Count >= len(rb.Responses) {
+				break
+			}
 		} else {
 			break
 		}

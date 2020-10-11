@@ -29,21 +29,22 @@ const CleanupTime = 1 * time.Minute
 const MaxPendingSubmits = 0xffff
 
 type Pool struct {
-	config          config.Pool
-	quit            chan struct{}
-	conn            *Connection
-	status          PoolState
-	wg              sync.WaitGroup
-	pendingCommands map[uint64]protocol.IMethod
-	subscription    *protocol.SubscribeResponse
-	setDifficulty   *protocol.SetDifficulty
-	notify          *protocol.Notify
-	configuration   *protocol.ConfigureResponse
-	workChan        PoolWorkChan
-	SubmitChan      chan *protocol.Submit
-	mtx             sync.Mutex
-	versions        *utils.Versions
-	ReplyChan       chan *protocol.Reply
+	config           config.Pool
+	quit             chan struct{}
+	conn             *Connection
+	status           PoolState
+	wg               sync.WaitGroup
+	pendingCommands  map[uint64]protocol.IMethod
+	subscription     *protocol.SubscribeResponse
+	setDifficulty    *protocol.SetDifficulty
+	notify           *protocol.Notify
+	configuration    *protocol.ConfigureResponse
+	workChan         PoolWorkChan
+	SubmitChan       chan *protocol.Submit
+	mtx              sync.Mutex
+	versions         *utils.VersionSource
+	ReplyChan        chan *protocol.Reply
+	knownExtraNonces map[interface{}]bool
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -251,6 +252,10 @@ func (p *Pool) handleSubmit(submit *protocol.Submit) {
 	if p.notify.JobId != submit.Params[1] {
 		return
 	}
+	if _, found := p.knownExtraNonces[submit.Params[4]]; found {
+		return
+	}
+	p.knownExtraNonces[submit.Params[4]] = true
 	if err := p.conn.Call(submit); err != nil {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
@@ -440,17 +445,18 @@ func (p *Pool) processWork() {
 		reloadVersions = true
 	}
 	if reloadVersions {
-		p.versions = utils.NewVersions(work.Version, work.VersionRollingMask, 1, 10)
-		p.versions.Shuffle()
+		p.versions = utils.NewVersionSource(work.Version, work.VersionRollingMask)
 	}
 	work.VersionsSource = p.versions
+	p.knownExtraNonces = map[interface{}]bool{}
 	p.workChan <- work
 	log.WithFields(log.Fields{
-		"url":        p.config.URL,
-		"user":       p.config.User,
-		"jobId":      work.JobId,
-		"difficulty": work.Difficulty,
-		"ntime":      work.Ntime,
-		"prevHash":   utils.HashToString(work.PrevHash),
+		"url":              p.config.URL,
+		"user":             p.config.User,
+		"jobId":            work.JobId,
+		"difficulty":       work.Difficulty,
+		"ntime":            work.Ntime,
+		"prevHash":         utils.HashToString(work.PrevHash),
+		"targetDifficulty": work.TargetDifficulty,
 	}).Infoln("New work")
 }

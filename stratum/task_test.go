@@ -11,7 +11,7 @@ func TestNewTask(t *testing.T) {
 	if pw == nil {
 		t.Fatal("pool work not decoded successfully")
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +23,6 @@ func TestNewTask(t *testing.T) {
 		t.Fatal()
 	}
 	if hex.EncodeToString(pt.Endstate[:]) != "00000000ea07101775424c5f08070816" {
-		t.Fatal(hex.EncodeToString(pt.Endstate[:]))
-	}
-	pt.IncreaseNTime(1)
-	if hex.EncodeToString(pt.Endstate[:]) != "00000000ea07101775424c5f76424c5f" {
 		t.Fatal(hex.EncodeToString(pt.Endstate[:]))
 	}
 	pw, err = UnmarshalTestWork()
@@ -41,10 +37,6 @@ func TestNewTask(t *testing.T) {
 	if hex.EncodeToString(pt.Endstate[:]) != "160807085f4c4275171007ea00000000" {
 		t.Fatal(hex.EncodeToString(pt.Endstate[:]))
 	}
-	pt.IncreaseNTime(1)
-	if hex.EncodeToString(pt.Endstate[:]) != "160807085f4c4276171007ea00000000" {
-		t.Fatal(hex.EncodeToString(pt.Endstate[:]))
-	}
 }
 
 func BenchmarkNewTask(b *testing.B) {
@@ -52,7 +44,7 @@ func BenchmarkNewTask(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	versions := utils.NewVersions(pw.Version, pw.VersionRollingMask, 4, 4)
+	versions := utils.NewVersionSource(pw.Version, pw.VersionRollingMask)
 	var versionMasks [4]utils.Version
 	versions.Retrieve(versionMasks[:])
 	b.StartTimer()

@@ -1,6 +1,6 @@
 package utils
 
-func SwapUint32(data []byte) {
+func SwapUint32Bytes(data []byte) {
 	dataLen := len(data)
 	var i, j, k, l int
 	for i = 0; i < dataLen; i += 4 {

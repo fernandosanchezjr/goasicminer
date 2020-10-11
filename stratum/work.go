@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
+	"math/big"
 )
 
 type Work struct {
@@ -26,9 +27,11 @@ type Work struct {
 	CleanJobs          bool
 	Nonce              uint32
 	Pool               *Pool
+	TargetDifficulty   utils.Difficulty
 	plainHeader        [80]byte
 	headerBuf          *bytes.Buffer
-	VersionsSource     *utils.Versions
+	VersionsSource     *utils.VersionSource
+	ready              bool
 }
 
 type PoolWorkChan chan *Work
@@ -40,6 +43,8 @@ func NewWork(
 	notify *protocol.Notify,
 	pool *Pool,
 ) *Work {
+	var result big.Int
+	utils.CalculateDifficulty(utils.CompactToBig(notify.NBits), &result)
 	w := &Work{
 		ExtraNonce1:        subscription.ExtraNonce1,
 		ExtraNonce2Len:     subscription.ExtraNonce2Len,
@@ -56,6 +61,7 @@ func NewWork(
 		Ntime:              notify.NTime,
 		CleanJobs:          notify.CleanJobs,
 		Pool:               pool,
+		TargetDifficulty:   utils.Difficulty(result.Int64()),
 		headerBuf:          bytes.NewBuffer(make([]byte, 0, 80)),
 	}
 	return w
@@ -95,29 +101,32 @@ func (pw *Work) MerkleRoot() []byte {
 		merkleHash = utils.DoubleHash(plainText[:])
 		copy(plainText[0:32], merkleHash[:])
 	}
-	utils.SwapUint32(merkleHash[:])
+	utils.SwapUint32Bytes(merkleHash[:])
 	return merkleHash[:]
 }
 
 func (pw *Work) PlainHeader() []byte {
-	pw.plainHeader[0] = byte((pw.Version >> 24) & 0xff)
-	pw.plainHeader[1] = byte((pw.Version >> 16) & 0xff)
-	pw.plainHeader[2] = byte((pw.Version >> 8) & 0xff)
-	pw.plainHeader[3] = byte(pw.Version & 0xff)
-	copy(pw.plainHeader[4:36], pw.PrevHash[:])
-	copy(pw.plainHeader[36:68], pw.MerkleRoot())
-	pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
-	pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
-	pw.plainHeader[70] = byte((pw.Ntime >> 8) & 0xff)
-	pw.plainHeader[71] = byte(pw.Ntime & 0xff)
-	pw.plainHeader[72] = byte((pw.Nbits >> 24) & 0xff)
-	pw.plainHeader[73] = byte((pw.Nbits >> 16) & 0xff)
-	pw.plainHeader[74] = byte((pw.Nbits >> 8) & 0xff)
-	pw.plainHeader[75] = byte(pw.Nbits & 0xff)
-	pw.plainHeader[76] = byte((pw.Nonce >> 24) & 0xff)
-	pw.plainHeader[77] = byte((pw.Nonce >> 16) & 0xff)
-	pw.plainHeader[78] = byte((pw.Nonce >> 8) & 0xff)
-	pw.plainHeader[79] = byte(pw.Nonce & 0xff)
+	if !pw.ready {
+		pw.plainHeader[0] = byte((pw.Version >> 24) & 0xff)
+		pw.plainHeader[1] = byte((pw.Version >> 16) & 0xff)
+		pw.plainHeader[2] = byte((pw.Version >> 8) & 0xff)
+		pw.plainHeader[3] = byte(pw.Version & 0xff)
+		copy(pw.plainHeader[4:36], pw.PrevHash[:])
+		copy(pw.plainHeader[36:68], pw.MerkleRoot())
+		pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
+		pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
+		pw.plainHeader[70] = byte((pw.Ntime >> 8) & 0xff)
+		pw.plainHeader[71] = byte(pw.Ntime & 0xff)
+		pw.plainHeader[72] = byte((pw.Nbits >> 24) & 0xff)
+		pw.plainHeader[73] = byte((pw.Nbits >> 16) & 0xff)
+		pw.plainHeader[74] = byte((pw.Nbits >> 8) & 0xff)
+		pw.plainHeader[75] = byte(pw.Nbits & 0xff)
+		pw.plainHeader[76] = byte((pw.Nonce >> 24) & 0xff)
+		pw.plainHeader[77] = byte((pw.Nonce >> 16) & 0xff)
+		pw.plainHeader[78] = byte((pw.Nonce >> 8) & 0xff)
+		pw.plainHeader[79] = byte(pw.Nonce & 0xff)
+		pw.ready = true
+	}
 	return pw.plainHeader[:]
 }
 
@@ -133,5 +142,6 @@ func (pw *Work) ExtraNonce2Mask() utils.Nonce64 {
 
 func (pw *Work) SetExtraNonce2(extraNonce utils.Nonce64) utils.Nonce64 {
 	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
+	pw.ready = false
 	return pw.ExtraNonce2
 }

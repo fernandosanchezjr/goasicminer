@@ -1,7 +1,6 @@
 package gekko
 
 import (
-	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
@@ -28,16 +27,6 @@ const (
 	BM1387MaxResponseTimeout = 5 * time.Second
 )
 
-var extremeVersionRolling bool
-var increaseNtime bool
-
-func init() {
-	flag.BoolVar(&extremeVersionRolling, "extreme-version-rolling", false,
-		"use extreme version rolling")
-	flag.BoolVar(&increaseNtime, "increase-ntime", false,
-		"increase ntime every second")
-}
-
 type BM1387Controller struct {
 	base.IController
 	lastReset          time.Time
@@ -60,8 +49,10 @@ type BM1387Controller struct {
 	defaultFrequency   float64
 	targetChips        int
 	currentJobId       string
-	versionSource      *utils.Versions
 	stallTimeout       time.Duration
+	knownExtraNonces   map[utils.Nonce64]bool
+	mtx                sync.Mutex
+	randomSource       *utils.RandomSource
 }
 
 func NewBM1387Controller(
@@ -73,7 +64,9 @@ func NewBM1387Controller(
 ) *BM1387Controller {
 	rc := &BM1387Controller{IController: controller, quit: make(chan struct{}), frequency: 0.0,
 		currentDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
-		defaultFrequency: defaultFrequency, targetChips: targetChips}
+		defaultFrequency: defaultFrequency, targetChips: targetChips,
+		randomSource: utils.NewRandomSource(),
+	}
 	rc.allocateTasks()
 	return rc
 }
@@ -319,7 +312,7 @@ func (bm *BM1387Controller) setTiming() {
 
 func (bm *BM1387Controller) initializeTasks() error {
 	bm.verifyQueue = make(chan *base.TaskResult, BM1387MaxVerifyTasks)
-	bm.stallChan = make(chan bool)
+	bm.stallChan = make(chan bool, 1)
 	bm.waiter.Add(3)
 	go bm.verifyLoop()
 	go bm.readLoop()
@@ -410,7 +403,7 @@ func (bm *BM1387Controller) readLoop() {
 				} else {
 					index = taskResponse.JobId
 				}
-				if index > BM1387MaxJobId || index < 0 {
+				if index >= BM1387MaxJobId || index < 0 {
 					continue
 				}
 				nextResult = verifyTasks[verifyPos]
@@ -430,12 +423,14 @@ func (bm *BM1387Controller) readLoop() {
 
 func (bm *BM1387Controller) writeLoop() {
 	defer bm.loopRecover("write")
-	var task *stratum.Task
+	var task = stratum.NewTask(BM1387MidstateCount, true)
 	var work *stratum.Work
 	workChan := bm.WorkChannel()
+	var versionSource *utils.VersionSource
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
+	versionTicker := time.NewTicker(time.Minute * 5)
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
@@ -443,43 +438,32 @@ func (bm *BM1387Controller) writeLoop() {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
+			versionTicker.Stop()
 			bm.waiter.Done()
 			return
+		case <-versionTicker.C:
+			if versionSource == nil {
+				continue
+			}
+			versionSource.Shuffle(bm.randomSource)
 		case work = <-workChan:
 			bm.currentJobId = work.JobId
-			if task == nil {
-				task = stratum.NewTask(BM1387MidstateCount, true)
-			}
 			bm.submitChan = work.Pool.SubmitChan
 			bm.poolVersion = work.Version
 			bm.poolVersionRolling = work.VersionRolling
 			(&diff).SetInt64(int64(work.Difficulty))
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
-			if bm.versionSource == nil {
-				bm.versionSource = work.VersionsSource.Clone()
-			} else if bm.versionSource.Mask != work.VersionsSource.Mask {
-				bm.versionSource = work.VersionsSource.Clone()
+			if versionSource == nil || versionSource.Mask != work.VersionsSource.Mask {
+				versionSource = work.VersionsSource.Clone()
+				versionSource.Shuffle(bm.randomSource)
 			}
-			bm.versionSource.Retrieve(versionMasks[:])
-			task.Update(work, versionMasks[:])
 			if warmedUp {
+				work.SetExtraNonce2(utils.Nonce64(bm.randomSource.Uint64()))
+				versionSource.RNGRetrieve(bm.randomSource, versionMasks[:])
+				task.Update(work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
 				currentTask.Update(task)
 			}
-		case <-bm.stallChan:
-			if work == nil || !warmedUp {
-				continue
-			}
-			if increaseNtime {
-				work.Ntime += 1
-			}
-			if !extremeVersionRolling {
-				bm.versionSource.RandomJump()
-			}
-			if base.UseBiasedExtraNonce2 {
-				work.SetExtraNonce2(utils.Nonce64(utils.Random(8.0)))
-			}
-			bm.versionSource.Retrieve(versionMasks[:])
 		case <-mainTicker.C:
 			if work == nil {
 				continue
@@ -509,17 +493,16 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
-				if base.UseRandomExtraNonce2 {
-					work.SetExtraNonce2(utils.Nonce64(utils.RandomUint64()))
-				} else {
-					work.SetExtraNonce2(work.ExtraNonce2 + 1)
-				}
-				if extremeVersionRolling {
-					work.VersionsSource.Retrieve(versionMasks[:])
-				}
+				work.SetExtraNonce2(utils.Nonce64(bm.randomSource.Uint64()))
+				versionSource.RNGRetrieve(bm.randomSource, versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
+		case <-bm.stallChan:
+			if work == nil || !warmedUp {
+				continue
+			}
+			bm.randomSource.Shuffle()
 		}
 	}
 }
@@ -529,11 +512,11 @@ func (bm *BM1387Controller) verifyLoop() {
 	var verifyTask *base.TaskResult
 	var resultDiff big.Int
 	var hashBig big.Int
-	var match bool
+	var poolMatch bool
 	var submitVersion utils.Version
 	var maxDiff, diff utils.Difficulty
-	var lastMatchTime time.Time = time.Now()
-	stallTicker := time.NewTicker(time.Second)
+	stallDuration := bm.fullscanDuration * 64
+	stallTicker := time.NewTicker(stallDuration)
 	var diffIncreased bool
 	for {
 		select {
@@ -550,18 +533,18 @@ func (bm *BM1387Controller) verifyLoop() {
 			}
 			hash := verifyTask.CalculateHash()
 			utils.HashToBig(hash, &hashBig)
-			match = hashBig.Cmp(bm.currentDiff) <= 0
-			if match {
-				if bm.poolVersionRolling {
-					submitVersion = verifyTask.Version & ^bm.poolVersion
-				} else {
-					submitVersion = 0
-				}
+			poolMatch = hashBig.Cmp(bm.currentDiff) <= 0
+			if bm.poolVersionRolling {
+				submitVersion = verifyTask.Version & ^bm.poolVersion
+			} else {
+				submitVersion = 0
+			}
+			utils.CalculateDifficulty(&hashBig, &resultDiff)
+			diff = utils.Difficulty(resultDiff.Int64())
+			if poolMatch {
 				bm.submitChan <- protocol2.NewSubmit(
 					verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
 				)
-				utils.CalculateDifficulty(&hashBig, &resultDiff)
-				diff = utils.Difficulty(resultDiff.Int64())
 				log.WithFields(log.Fields{
 					"serial":      bm.String(),
 					"jobId":       verifyTask.JobId,
@@ -579,13 +562,9 @@ func (bm *BM1387Controller) verifyLoop() {
 						"diff":   maxDiff,
 					}).Infoln("Best share")
 				}
-				lastMatchTime = time.Now()
 			}
 		case <-stallTicker.C:
-			if time.Since(lastMatchTime) >= time.Second && bm.versionSource != nil {
-				bm.stallChan <- true
-				lastMatchTime = time.Now()
-			}
+			bm.stallChan <- true
 		}
 	}
 }

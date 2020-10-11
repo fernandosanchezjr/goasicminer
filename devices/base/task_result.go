@@ -8,6 +8,8 @@ import (
 type TaskResult struct {
 	JobId       string
 	Version     utils.Version
+	VersionPos  int32
+	Midstate    int32
 	ExtraNonce2 utils.Nonce64
 	NTime       utils.NTime
 	Nonce       utils.Nonce32
@@ -42,6 +44,6 @@ func (tr *TaskResult) UpdateHeader() {
 
 func (tr *TaskResult) CalculateHash() [32]byte {
 	tr.UpdateHeader()
-	utils.SwapUint32(tr.PlainHeader[:])
+	utils.SwapUint32Bytes(tr.PlainHeader[:])
 	return utils.DoubleHash(tr.PlainHeader[:])
 }

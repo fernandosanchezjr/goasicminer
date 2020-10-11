@@ -130,9 +130,9 @@ func (ca *ChartsAggregator) AggregateHost(hostName string) {
 		}
 	}
 	log.WithFields(log.Fields{
-		"time":     ca.lastTime,
+		"lastTime": ca.lastTime,
 		"hostName": hostName,
-	}).Println("Last aggregate chart time")
+	}).Println("Chart aggregate start")
 	if aggregated, ca.lastTime, err = GroupEvents(ca.db, hostName, ca.lastTime); err != nil {
 		log.WithFields(log.Fields{"error": err, "hostName": hostName}).Error(
 			"Can't gather events")

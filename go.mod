@@ -5,13 +5,13 @@ go 1.14
 replace github.com/ziutek/ftdi => /home/fernando/projects/goasicminer/src/github.com/ziutek/ftdi
 
 require (
-	bitbucket.org/MaVo159/rand v0.0.0-20140711171355-f17ce01a7a45
 	github.com/ReneKroon/ttlcache v1.7.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452
 	github.com/fernandosanchezjr/sha256-simd v0.1.4
 	github.com/go-echarts/go-echarts v1.0.0
 	github.com/howeyc/crc16 v0.0.0-20171223171357-2b2a61e366a6
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/sirupsen/logrus v1.6.0
 	github.com/valyala/gorpc v0.0.0-20160519171614-908281bef774

@@ -6,7 +6,7 @@ import (
 )
 
 func Test_Combinations(t *testing.T) {
-	vs := NewVersions(0x20000000, 0x1fffe000, 1, 4)
+	vs := NewVersionSource(0x20000000, 0x1fffe000)
 	var versionCount [4]Version
 	for i := 0; i < 16; i++ {
 		vs.Retrieve(versionCount[:])

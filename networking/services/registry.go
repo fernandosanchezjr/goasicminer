@@ -4,6 +4,8 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/valyala/gorpc"
+	"github.com/ziutek/ftdi"
+	"gonum.org/v1/gonum/optimize"
 	"time"
 )
 
@@ -28,6 +30,8 @@ func init() {
 	gorpc.RegisterType(level)
 	gorpc.RegisterType(duration)
 	gorpc.RegisterType(interfaceSlice)
+	gorpc.RegisterType(ftdi.Error{})
+	gorpc.RegisterType(optimize.Failure)
 }
 
 type Service struct {

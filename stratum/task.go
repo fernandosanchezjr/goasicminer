@@ -67,22 +67,3 @@ func (pt *Task) Update(pw *Work, versions []utils.Version) {
 		}
 	}
 }
-
-func (pt *Task) IncreaseNTime(delta utils.NTime) {
-	if delta == 0 {
-		return
-	}
-	pt.NTime += delta
-	if pt.reversed {
-		endstateLen := len(pt.Endstate)
-		pt.Endstate[endstateLen-4] = byte(pt.NTime & 0xff)
-		pt.Endstate[endstateLen-3] = byte((pt.NTime >> 8) & 0xff)
-		pt.Endstate[endstateLen-2] = byte((pt.NTime >> 16) & 0xff)
-		pt.Endstate[endstateLen-1] = byte((pt.NTime >> 24) & 0xff)
-	} else {
-		pt.Endstate[4] = byte((pt.NTime >> 24) & 0xff)
-		pt.Endstate[5] = byte((pt.NTime >> 16) & 0xff)
-		pt.Endstate[6] = byte((pt.NTime >> 8) & 0xff)
-		pt.Endstate[7] = byte(pt.NTime & 0xff)
-	}
-}

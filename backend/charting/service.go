@@ -1,16 +1,15 @@
 package charting
 
 import (
-	"errors"
 	"github.com/fernandosanchezjr/goasicminer/backend/services/data"
 	"github.com/fernandosanchezjr/goasicminer/backend/services/implementation"
 	"github.com/fernandosanchezjr/goasicminer/networking/certs"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"github.com/go-echarts/go-echarts/charts"
+	"github.com/julienschmidt/httprouter"
 	log "github.com/sirupsen/logrus"
 	"go.etcd.io/bbolt"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -24,31 +23,14 @@ func NewService(db *bbolt.DB) *Service {
 
 func (cs *Service) Start() error {
 	cert, key, _ := certs.GetCertsPath("https")
-	return http.ListenAndServeTLS(":8080", cert, key, cs)
-}
-
-func (cs *Service) GetHostName(request *http.Request) (string, error) {
-	var parts []string
-	for _, part := range strings.Split(request.URL.Path, "/") {
-		if part != "" {
-			parts = append(parts, part)
-		}
-	}
-	if len(parts) == 1 {
-		if found, err := implementation.IsHostNameKnown(cs.db, parts[0]); err != nil {
-			return "", err
-		} else if !found {
-			return "", errors.New("invalid path")
-		}
-		return parts[0], nil
-	} else {
-		return "", errors.New("invalid path")
-	}
+	router := httprouter.New()
+	router.GET("/difficulty/:hostName", cs.GetHostNamePerformance)
+	return http.ListenAndServeTLS(":8080", cert, key, router)
 }
 
 func (cs *Service) GetMinutes() ([]*data.Minute, error) {
 	end := time.Now()
-	start := end.AddDate(0, 0, -1)
+	start := end.Add(-24 * time.Hour)
 	return implementation.GetAggregatedMinutes(cs.db, "moria01", start, end)
 }
 
@@ -69,7 +51,7 @@ func (cs *Service) GetChartData(minutes []*data.Minute) map[string]*Data {
 func (cs *Service) BuildChart(lineData map[string]*Data) *charts.Line {
 	lineChart := charts.NewLine()
 	lineChart.SetGlobalOptions(
-		charts.TitleOpts{Title: "Difficulty"},
+		charts.TitleOpts{Title: "Difficulty, by device"},
 		charts.ToolboxOpts{
 			Show: true,
 		},
@@ -86,10 +68,19 @@ func (cs *Service) BuildChart(lineData map[string]*Data) *charts.Line {
 	return lineChart
 }
 
-func (cs *Service) ServeHTTP(w http.ResponseWriter, request *http.Request) {
+func (cs *Service) GetHostNamePerformance(
+	w http.ResponseWriter,
+	request *http.Request,
+	params httprouter.Params,
+) {
 	startTime := time.Now()
-	hostName, err := cs.GetHostName(request)
-	if err != nil {
+	hostName := params.ByName("hostName")
+	if found, err := implementation.IsHostNameKnown(cs.db, hostName); err != nil {
+		log.WithError(err).Error("Error checking hostname")
+		w.WriteHeader(404)
+		return
+	} else if !found {
+		log.WithField("hostName", hostName).Error("Hostname not found")
 		w.WriteHeader(404)
 		return
 	}
@@ -108,5 +99,5 @@ func (cs *Service) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		"totalMinutes": len(minutes),
 		"path":         request.URL,
 		"hostName":     hostName,
-	}).Println("HTTP request")
+	}).Println("Chart request")
 }
