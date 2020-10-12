@@ -445,6 +445,7 @@ func (bm *BM1387Controller) writeLoop() {
 			if versionSource == nil {
 				continue
 			}
+			bm.randomSource.Reseed()
 			versionSource.Shuffle(bm.randomSource)
 		case work = <-workChan:
 			bm.currentJobId = work.JobId
