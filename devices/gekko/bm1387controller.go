@@ -43,13 +43,11 @@ type BM1387Controller struct {
 	poolVersionRolling bool
 	shuttingDown       bool
 	submitChan         chan *protocol2.Submit
-	stallChan          chan bool
 	minFrequency       float64
 	maxFrequency       float64
 	defaultFrequency   float64
 	targetChips        int
 	currentJobId       string
-	stallTimeout       time.Duration
 	knownExtraNonces   map[utils.Nonce64]bool
 	mtx                sync.Mutex
 	randomSource       *utils.RandomSource
@@ -312,7 +310,6 @@ func (bm *BM1387Controller) setTiming() {
 
 func (bm *BM1387Controller) initializeTasks() error {
 	bm.verifyQueue = make(chan *base.TaskResult, BM1387MaxVerifyTasks)
-	bm.stallChan = make(chan bool, 1)
 	bm.waiter.Add(3)
 	go bm.verifyLoop()
 	go bm.readLoop()
@@ -430,7 +427,7 @@ func (bm *BM1387Controller) writeLoop() {
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
-	versionTicker := time.NewTicker(time.Minute * 5)
+	versionTicker := time.NewTicker(time.Minute * 30)
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
@@ -499,11 +496,6 @@ func (bm *BM1387Controller) writeLoop() {
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
-		case <-bm.stallChan:
-			if work == nil || !warmedUp {
-				continue
-			}
-			bm.randomSource.Shuffle()
 		}
 	}
 }
@@ -516,13 +508,10 @@ func (bm *BM1387Controller) verifyLoop() {
 	var poolMatch bool
 	var submitVersion utils.Version
 	var maxDiff, diff utils.Difficulty
-	stallDuration := bm.fullscanDuration * 64
-	stallTicker := time.NewTicker(stallDuration)
 	var diffIncreased bool
 	for {
 		select {
 		case <-bm.quit:
-			stallTicker.Stop()
 			bm.waiter.Done()
 			return
 		case verifyTask = <-bm.verifyQueue:
@@ -564,8 +553,6 @@ func (bm *BM1387Controller) verifyLoop() {
 					}).Infoln("Best share")
 				}
 			}
-		case <-stallTicker.C:
-			bm.stallChan <- true
 		}
 	}
 }
