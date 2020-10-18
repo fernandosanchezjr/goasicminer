@@ -3,6 +3,7 @@ package utils
 import (
 	"gonum.org/v1/gonum/stat/combin"
 	"math/bits"
+	"math/rand"
 )
 
 type VersionSource struct {
@@ -18,7 +19,7 @@ type VersionSource struct {
 func NewVersionSource(version Version, mask Version) *VersionSource {
 	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &VersionSource{Version: version, Mask: mask, bitCount: bitCount, minVersionBits: 1,
-		maxVersionBits: bitCount - 1}
+		maxVersionBits: 4}
 	vs.init()
 	return vs
 }
@@ -65,13 +66,13 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 	}
 }
 
-func (vs *VersionSource) RNGRetrieve(rs *RandomSource, dest []Version) {
+func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
 	destCount := len(dest)
 	rolledCount := len(vs.RolledVersions)
 	if destCount == 0 {
 		return
 	}
-	pos := rs.rng.Intn(len(vs.RolledVersions))
+	pos := rng.Intn(len(vs.RolledVersions))
 	for i := 0; i < destCount; i++ {
 		if pos >= rolledCount {
 			pos = 0
@@ -87,8 +88,8 @@ func (vs *VersionSource) Clone() *VersionSource {
 	return &ret
 }
 
-func (vs *VersionSource) Shuffle(rs *RandomSource) {
-	rs.rng.Shuffle(len(vs.RolledVersions), func(i, j int) {
+func (vs *VersionSource) Shuffle(rng *rand.Rand) {
+	rng.Shuffle(len(vs.RolledVersions), func(i, j int) {
 		vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
 	})
 }

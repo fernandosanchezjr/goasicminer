@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
+	"github.com/fernandosanchezjr/goasicminer/generators"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	protocol2 "github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
 	"math/big"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +52,6 @@ type BM1387Controller struct {
 	currentJobId       string
 	knownExtraNonces   map[utils.Nonce64]bool
 	mtx                sync.Mutex
-	randomSource       *utils.RandomSource
 }
 
 func NewBM1387Controller(
@@ -63,7 +64,6 @@ func NewBM1387Controller(
 	rc := &BM1387Controller{IController: controller, quit: make(chan struct{}), frequency: 0.0,
 		currentDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
 		defaultFrequency: defaultFrequency, targetChips: targetChips,
-		randomSource: utils.NewRandomSource(),
 	}
 	rc.allocateTasks()
 	return rc
@@ -423,11 +423,12 @@ func (bm *BM1387Controller) writeLoop() {
 	var task = stratum.NewTask(BM1387MidstateCount, true)
 	var work *stratum.Work
 	workChan := bm.WorkChannel()
+	var generator = generators.NewUint64Generator()
+	rng := rand.New(rand.NewSource(utils.RandomInt64()))
 	var versionSource *utils.VersionSource
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
-	versionTicker := time.NewTicker(time.Minute * 30)
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
@@ -435,15 +436,8 @@ func (bm *BM1387Controller) writeLoop() {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
-			versionTicker.Stop()
 			bm.waiter.Done()
 			return
-		case <-versionTicker.C:
-			if versionSource == nil {
-				continue
-			}
-			bm.randomSource.Reseed()
-			versionSource.Shuffle(bm.randomSource)
 		case work = <-workChan:
 			bm.currentJobId = work.JobId
 			bm.submitChan = work.Pool.SubmitChan
@@ -453,11 +447,11 @@ func (bm *BM1387Controller) writeLoop() {
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
 			if versionSource == nil || versionSource.Mask != work.VersionsSource.Mask {
 				versionSource = work.VersionsSource.Clone()
-				versionSource.Shuffle(bm.randomSource)
+				versionSource.Shuffle(rng)
 			}
 			if warmedUp {
-				work.SetExtraNonce2(utils.Nonce64(bm.randomSource.Uint64()))
-				versionSource.RNGRetrieve(bm.randomSource, versionMasks[:])
+				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
+				versionSource.Retrieve(versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
 				currentTask.Update(task)
@@ -491,8 +485,8 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
-				work.SetExtraNonce2(utils.Nonce64(bm.randomSource.Uint64()))
-				versionSource.RNGRetrieve(bm.randomSource, versionMasks[:])
+				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
+				versionSource.Retrieve(versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
@@ -507,8 +501,7 @@ func (bm *BM1387Controller) verifyLoop() {
 	var hashBig big.Int
 	var poolMatch bool
 	var submitVersion utils.Version
-	var maxDiff, diff utils.Difficulty
-	var diffIncreased bool
+	var diff utils.Difficulty
 	for {
 		select {
 		case <-bm.quit:
@@ -544,14 +537,6 @@ func (bm *BM1387Controller) verifyLoop() {
 					"version":     verifyTask.Version,
 					"difficulty":  diff,
 				}).Infoln("Result")
-				diffIncreased = diff > maxDiff
-				if diffIncreased {
-					maxDiff = diff
-					log.WithFields(log.Fields{
-						"serial": bm.String(),
-						"diff":   maxDiff,
-					}).Infoln("Best share")
-				}
 			}
 		}
 	}
