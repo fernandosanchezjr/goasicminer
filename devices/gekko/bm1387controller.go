@@ -429,6 +429,7 @@ func (bm *BM1387Controller) writeLoop() {
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	mainTicker := time.NewTicker(bm.fullscanDuration)
+	versionTicker := time.NewTicker(30 * time.Minute)
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
@@ -436,6 +437,7 @@ func (bm *BM1387Controller) writeLoop() {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
+			versionTicker.Stop()
 			bm.waiter.Done()
 			return
 		case work = <-workChan:
@@ -451,7 +453,7 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
-				versionSource.Retrieve(versionMasks[:])
+				versionSource.RNGRetrieve(rng, versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
 				currentTask.Update(task)
@@ -486,10 +488,15 @@ func (bm *BM1387Controller) writeLoop() {
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
 				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
-				versionSource.Retrieve(versionMasks[:])
+				versionSource.RNGRetrieve(rng, versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
+		case <-versionTicker.C:
+			if versionSource != nil {
+				versionSource.Shuffle(rng)
+			}
+			generator.Reseed()
 		}
 	}
 }

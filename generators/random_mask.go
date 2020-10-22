@@ -33,3 +33,7 @@ func (r *RandomMask) Next(uint64) uint64 {
 		return r.rng.Uint64() | bits.RotateLeft64(mask, r.rng.Intn(56))
 	}
 }
+
+func (r *RandomMask) Reseed() {
+	r.rng.Seed(utils.RandomInt64())
+}

@@ -18,15 +18,10 @@ func NewFlipNibble(value byte) *FlipNibble {
 }
 
 func (fn *FlipNibble) Next(previousState uint64) uint64 {
-	if previousState == 0 || previousState == 0xffffffffffffffff {
-		return fn.rng.Uint64()
-	}
-	var startPos = uint64(fn.rng.Intn(16))
-	var mask = fn.nibble << startPos * 4
-	if startPos > 0 {
-		return previousState ^ mask
-	} else if startPos == 0 {
-		return previousState ^ fn.nibble
-	}
-	return fn.rng.Uint64()
+	var mask = fn.nibble << uint64(fn.rng.Intn(60))
+	return previousState ^ mask
+}
+
+func (fn *FlipNibble) Reseed() {
+	fn.rng.Seed(utils.RandomInt64())
 }

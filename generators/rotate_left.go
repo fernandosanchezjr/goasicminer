@@ -19,3 +19,7 @@ func NewRotateLeft() *RotateLeft {
 func (rl *RotateLeft) Next(previousState uint64) uint64 {
 	return bits.RotateLeft64(previousState, rl.rng.Intn(63))
 }
+
+func (rl *RotateLeft) Reseed() {
+	rl.rng.Seed(utils.RandomInt64())
+}

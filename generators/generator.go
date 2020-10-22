@@ -7,6 +7,7 @@ import (
 
 type Generator64 interface {
 	Next(previousState uint64) uint64
+	Reseed()
 }
 
 type Uint64 struct {
@@ -42,18 +43,26 @@ func (u *Uint64) Next() uint64 {
 	return u.previousState
 }
 
+func (u *Uint64) Reseed() {
+	u.rng.Seed(utils.RandomInt64())
+	for _, g := range u.generators {
+		g.Reseed()
+	}
+}
+
 func NewUint64Generator() *Uint64 {
 	u := NewUint64()
 	for i := 0; i < 0x10; i++ {
 		b := byte(i)
 		u.Add(
-			&Add{}, &Subtract{},
-			NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b),
-			NewConstant(b),
-			NewRandom(b), NewRandomMask(b),
 			NewFlipBit(), NewFlipBit(), NewFlipBit(), NewFlipBit(),
+			NewFlipBit(), NewFlipBit(), NewFlipBit(), NewFlipBit(),
+			NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b),
+			NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b),
+			NewFlipByte(), NewFlipByte(),
+			NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
 			NewRotateLeft(), NewRotateRight(),
-			&Reverse{}, &ReverseBytes{},
+			&Reverse{}, &ReverseBytes{}, &Reverse{}, &ReverseBytes{},
 		)
 	}
 	return u
