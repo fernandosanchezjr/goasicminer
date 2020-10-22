@@ -2,7 +2,7 @@ module github.com/fernandosanchezjr/goasicminer
 
 go 1.14
 
-replace github.com/ziutek/ftdi => /home/fernando/projects/goasicminer/src/github.com/ziutek/ftdi
+replace github.com/ziutek/ftdi => github.com/fernandosanchezjr/ftdi v0.0.0-20201022041410-9e89d6958ffe
 
 require (
 	github.com/ReneKroon/ttlcache v1.7.0
