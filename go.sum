@@ -12,8 +12,8 @@ github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452 h1:8GxaG7cAK2l
 github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452/go.mod h1:uY0hNevoNbdxl0Z07007Kx9jSyOPJ6cG3PHwk2gW5/k=
 github.com/epiclabs-io/ut v0.0.0-20190416122157-8da7fe4b4947 h1:5jyZq+mwwE90FnIyzAorlWF0Nrg8AB48KsDxofSAyBw=
 github.com/epiclabs-io/ut v0.0.0-20190416122157-8da7fe4b4947/go.mod h1:Sm6PW7b/nLOHEn3XxuUOXFYA4xFkLUnyAWUOcTGcRZ4=
-github.com/fernandosanchezjr/ftdi v0.0.0-20201022041410-9e89d6958ffe h1:6foH14lM++HNJxkJkYSiOE9KfFPoTufPxpymrknRSTs=
-github.com/fernandosanchezjr/ftdi v0.0.0-20201022041410-9e89d6958ffe/go.mod h1:fUzQhjslJJSlwoMW5Cd+0RUc8KuMDfsuZB+wfJAz1eg=
+github.com/fernandosanchezjr/ftdi v0.0.0-20201026194314-dea0f1d62583 h1:hyFEaznIwNDI/N51XOizDUgXf680d4FzG/fMaZmWyPg=
+github.com/fernandosanchezjr/ftdi v0.0.0-20201026194314-dea0f1d62583/go.mod h1:fUzQhjslJJSlwoMW5Cd+0RUc8KuMDfsuZB+wfJAz1eg=
 github.com/fernandosanchezjr/sha256-simd v0.1.4 h1:Kzh8ssSLlo3HTRB6OnJo+ef01p/Q6NQhA9pevCZOOSA=
 github.com/fernandosanchezjr/sha256-simd v0.1.4/go.mod h1:YuNxDaVGavuoESpXCBkMhr6g8YAmLo2WbKOrOEUoX0Q=
 github.com/fogleman/gg v1.2.1-0.20190220221249-0403632d5b90/go.mod h1:R/bRT+9gY/C5z7JzPU0zXsXHKM4/ayA+zqcVNZzPa1k=

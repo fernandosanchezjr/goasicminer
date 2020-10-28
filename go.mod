@@ -2,7 +2,7 @@ module github.com/fernandosanchezjr/goasicminer
 
 go 1.14
 
-replace github.com/ziutek/ftdi => github.com/fernandosanchezjr/ftdi v0.0.0-20201022041410-9e89d6958ffe
+replace github.com/ziutek/ftdi => github.com/fernandosanchezjr/ftdi v0.0.0-20201026194314-dea0f1d62583
 
 require (
 	github.com/ReneKroon/ttlcache v1.7.0
@@ -15,7 +15,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/sirupsen/logrus v1.6.0
 	github.com/valyala/gorpc v0.0.0-20160519171614-908281bef774
-	github.com/ziutek/ftdi v0.0.0-20200720221836-9d134ea90daf
+	github.com/ziutek/ftdi v0.0.0-00010101000000-000000000000
 	go.etcd.io/bbolt v1.3.5
 	gonum.org/v1/gonum v0.8.1
 	gopkg.in/yaml.v2 v2.3.0
