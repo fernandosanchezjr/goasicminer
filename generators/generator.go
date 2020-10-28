@@ -43,8 +43,15 @@ func (u *Uint64) Next() uint64 {
 	return u.previousState
 }
 
+func (u *Uint64) Shuffle() {
+	u.rng.Shuffle(len(u.generators), func(i, j int) {
+		u.generators[i], u.generators[j] = u.generators[j], u.generators[i]
+	})
+}
+
 func (u *Uint64) Reseed() {
 	u.rng.Seed(utils.RandomInt64())
+	u.Shuffle()
 	for _, g := range u.generators {
 		g.Reseed()
 	}
@@ -52,18 +59,57 @@ func (u *Uint64) Reseed() {
 
 func NewUint64Generator() *Uint64 {
 	u := NewUint64()
+	for i := 0; i < 64; i++ {
+		u.Add(NewMaskFlippers(i, u.rng)...)
+	}
 	for i := 0; i < 0x10; i++ {
 		b := byte(i)
-		u.Add(
-			NewFlipBit(), NewFlipBit(), NewFlipBit(), NewFlipBit(),
-			NewFlipBit(), NewFlipBit(), NewFlipBit(), NewFlipBit(),
-			NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b),
-			NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b), NewFlipNibble(b),
-			NewFlipByte(), NewFlipByte(),
-			NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
-			NewRotateLeft(), NewRotateRight(),
-			&Reverse{}, &ReverseBytes{}, &Reverse{}, &ReverseBytes{},
-		)
+		for j := 0; j < 4; j++ {
+			u.Add(
+				&Reverse{}, &ReverseBytes{}, NewRotateLeft(), NewRotateRight(),
+				NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
+				NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
+				NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
+				NewShiftedConstant(b), NewRandom(b), NewRandomMask(b),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+				NewFlipBit(), NewFlipNibble(), NewFlipByte(),
+			)
+		}
 	}
+	u.Shuffle()
 	return u
+}
+
+func NewMaskFlippers(startPos int, rng *rand.Rand) []Generator64 {
+	var generators []Generator64
+	positions := make([]int, 64)
+	for i := 0; i < 64; i++ {
+		positions[i] = i
+	}
+	var mask uint64
+	var bitPos int
+	var index int
+	for i := 0; i < 24; i++ {
+		if i == 0 {
+			bitPos = startPos
+			index = bitPos
+		} else {
+			index = rng.Intn(len(positions))
+			bitPos = positions[index]
+		}
+		mask = mask | (1 << bitPos)
+		if index < len(positions)-1 {
+			positions = append(positions[:index], positions[index+1:]...)
+		} else {
+			positions = positions[:index]
+		}
+		generators = append(generators, NewFlipMask(mask))
+	}
+	return generators
 }

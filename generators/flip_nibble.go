@@ -6,19 +6,17 @@ import (
 )
 
 type FlipNibble struct {
-	nibble uint64
-	rng    *rand.Rand
+	rng *rand.Rand
 }
 
-func NewFlipNibble(value byte) *FlipNibble {
+func NewFlipNibble() *FlipNibble {
 	return &FlipNibble{
-		nibble: uint64(value & 0xf),
-		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
+		rng: rand.New(rand.NewSource(utils.RandomInt64())),
 	}
 }
 
 func (fn *FlipNibble) Next(previousState uint64) uint64 {
-	var mask = fn.nibble << uint64(fn.rng.Intn(60))
+	var mask uint64 = 0xf << uint64(fn.rng.Intn(60))
 	return previousState ^ mask
 }
 
