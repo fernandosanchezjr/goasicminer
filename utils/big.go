@@ -136,3 +136,10 @@ func HashToString(hash [32]byte) string {
 	result := hex.EncodeToString(bigInt.Bytes())
 	return fmt.Sprintf("%s%s", strings.Repeat("0", 64-len(result)), result)
 }
+
+func CalculateCompactDifficulty(pdiff uint64) uint32 {
+	var diff, result big.Int
+	(&diff).SetInt64(int64(pdiff))
+	CalculateDifficulty(&diff, &result)
+	return BigToCompact(&result)
+}

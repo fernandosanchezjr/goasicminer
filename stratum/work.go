@@ -145,3 +145,8 @@ func (pw *Work) SetExtraNonce2(extraNonce utils.Nonce64) utils.Nonce64 {
 	pw.ready = false
 	return pw.ExtraNonce2
 }
+
+func (pw *Work) SetNtime(ntime utils.NTime) {
+	pw.Ntime = ntime
+	pw.ready = false
+}

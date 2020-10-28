@@ -13,6 +13,7 @@ type Task struct {
 	Endstate           [16]byte
 	Versions           []utils.Version
 	PlainHeader        [80]byte
+	Nbits              uint32
 	reversed           bool
 	maxMidstates       int
 }
@@ -30,7 +31,7 @@ func (pt *Task) Update(pw *Work, versions []utils.Version) {
 	pt.VersionRollingMask = pw.VersionRollingMask
 	pt.ExtraNonce2 = pw.ExtraNonce2
 	pt.NTime = pw.Ntime
-	//pt.Nbits = utils.CalculateCompactDifficulty(uint64(pw.Difficulty))
+	pt.Nbits = utils.CalculateCompactDifficulty(uint64(pw.Difficulty))
 	copy(pt.PlainHeader[:], pw.PlainHeader())
 	copy(pt.Endstate[:], pt.PlainHeader[64:])
 	if pt.reversed {
