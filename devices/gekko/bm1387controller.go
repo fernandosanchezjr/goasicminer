@@ -339,15 +339,15 @@ func (bm *BM1387Controller) readLoop() {
 	if err != nil {
 		panic(err)
 	}
-	var missingLoops uint64
 	var midstate, index int
 	var read int
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
 	rb := protocol.NewResponseBlock()
-	maxNonResponseLoops := uint64(BM1387MaxResponseTimeout / bm.maxTaskWait)
 	mainTicker := time.NewTicker(bm.maxTaskWait)
+	var lastReceived = time.Now()
+	var timeoutTicker = time.NewTicker(BM1387MaxResponseTimeout)
 	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
 	for i := 0; i < BM1387MaxVerifyTasks; i++ {
 		verifyTasks[i] = base.NewTaskResult()
@@ -357,6 +357,7 @@ func (bm *BM1387Controller) readLoop() {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
+			timeoutTicker.Stop()
 			bm.waiter.Done()
 			return
 		case <-mainTicker.C:
@@ -364,7 +365,7 @@ func (bm *BM1387Controller) readLoop() {
 			if read, err = bm.Read(buf); err != nil {
 				log.WithFields(log.Fields{
 					"serial": bm.String(),
-					"error":  err,
+					"error":  err.Error(),
 				}).Warnln("Error reading response block")
 				mainTicker.Stop()
 				bm.waiter.Done()
@@ -372,13 +373,6 @@ func (bm *BM1387Controller) readLoop() {
 				return
 			}
 			if read == 0 {
-				missingLoops += 1
-				if missingLoops >= maxNonResponseLoops {
-					mainTicker.Stop()
-					bm.waiter.Done()
-					go bm.Exit()
-					return
-				}
 				continue
 			}
 			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
@@ -388,7 +382,6 @@ func (bm *BM1387Controller) readLoop() {
 				}).Warnln("Error decoding response block")
 				continue
 			}
-			missingLoops = 0
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {
@@ -414,6 +407,14 @@ func (bm *BM1387Controller) readLoop() {
 					}
 				}
 			}
+			lastReceived = time.Now()
+		case <-timeoutTicker.C:
+			if time.Since(lastReceived) >= BM1387MaxResponseTimeout {
+				mainTicker.Stop()
+				bm.waiter.Done()
+				go bm.Exit()
+				return
+			}
 		}
 	}
 }
@@ -433,6 +434,8 @@ func (bm *BM1387Controller) writeLoop() {
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
+	var ntime utils.NTime
+	var ntimeOffset utils.NTime
 	for {
 		select {
 		case <-bm.quit:
@@ -441,6 +444,7 @@ func (bm *BM1387Controller) writeLoop() {
 			bm.waiter.Done()
 			return
 		case work = <-workChan:
+			ntime = work.Ntime
 			bm.currentJobId = work.JobId
 			bm.submitChan = work.Pool.SubmitChan
 			bm.poolVersion = work.Version
@@ -469,7 +473,7 @@ func (bm *BM1387Controller) writeLoop() {
 				if _, err = bm.Write(data); err != nil {
 					log.WithFields(log.Fields{
 						"serial": bm.String(),
-						"error":  err,
+						"error":  err.Error(),
 					}).Warnln("USB write error")
 					bm.waiter.Done()
 					go bm.Exit()
@@ -487,12 +491,15 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
+				ntimeOffset = utils.NTime(rng.Intn(0xff))
+				work.SetNtime(ntime + ntimeOffset - 0x7f)
 				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
 				versionSource.RNGRetrieve(rng, versionMasks[:])
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
 		case <-versionTicker.C:
+			rng.Seed(utils.RandomInt64())
 			if versionSource != nil {
 				versionSource.Shuffle(rng)
 			}
