@@ -7,7 +7,7 @@ import (
 
 const MaxBitsFlipped = 8
 const MaxFlipBits = 16
-const MaxGeneratorReuse = 8
+const MaxGeneratorReuse = 4
 
 type Generator64 interface {
 	Next(previousState uint64) uint64
