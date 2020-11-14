@@ -116,23 +116,55 @@ func (c *Connection) Call(command protocol.IMethod) error {
 	}
 }
 
-func (c *Connection) replyLoop() {
+func (c *Connection) readReply(replyChan chan *protocol.Reply, errChan chan error) {
+	defer c.recover()
 	r := &protocol.Reply{}
+	if err := c.reader.Decode(&r); err != nil {
+		if strings.Contains(err.Error(), "use of closed network connection") {
+			return
+		} else {
+			log.WithFields(log.Fields{
+				"error": err,
+			}).Warnln("RPC decode error")
+			errChan <- err
+		}
+	} else {
+		if logRPC {
+			c.logRPC("RPC in", r)
+		}
+		replyChan <- r
+	}
+}
+
+func (c *Connection) replyLoop() {
+	var err error
+	var replyChan = make(chan *protocol.Reply)
 	for {
-		if err := c.reader.Decode(&r); err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				return
-			} else {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+		doneChan := ctx.Done()
+		var errChan = make(chan error)
+		go c.readReply(replyChan, errChan)
+		err = nil
+		select {
+		case <-doneChan:
+			cancel()
+			if err = c.Close(); err != nil {
 				log.WithFields(log.Fields{
 					"error": err,
-				}).Warnln("RPC decode error")
+				}).Warnln("Connection close error")
 			}
-		} else {
-			if logRPC {
-				c.logRPC("RPC in", r)
+			return
+		case err = <-errChan:
+			cancel()
+			if err = c.Close(); err != nil {
+				log.WithFields(log.Fields{
+					"error": err,
+				}).Warnln("Connection read error")
 			}
-			c.replyChan <- r
-			r = &protocol.Reply{}
+			return
+		case reply := <-replyChan:
+			cancel()
+			c.replyChan <- reply
 		}
 	}
 }
