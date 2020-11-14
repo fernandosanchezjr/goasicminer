@@ -1,6 +1,7 @@
 package stratum
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -56,9 +57,6 @@ func NewConnection(address string, replyChan chan *protocol.Reply) (*Connection,
 		if err = conn.SetKeepAlivePeriod(30 * time.Second); err != nil {
 			return nil, err
 		}
-		//if err = conn.SetReadBuffer(9152); err != nil {
-		//	return nil, err
-		//}
 		c := &Connection{conn: conn, reader: json.NewDecoder(conn), writer: json.NewEncoder(conn), id: 0,
 			replyChan: replyChan}
 		go c.replyLoop()
@@ -67,7 +65,14 @@ func NewConnection(address string, replyChan chan *protocol.Reply) (*Connection,
 	return nil, fmt.Errorf("No route to %s", address)
 }
 
+func (c *Connection) recover() {
+	if err := recover(); err != nil {
+		log.WithField("error", err).Error("Call failed")
+	}
+}
+
 func (c *Connection) Close() error {
+	defer c.recover()
 	return c.conn.Close()
 }
 
@@ -92,7 +97,23 @@ func (c *Connection) Call(command protocol.IMethod) error {
 	if logRPC {
 		c.logRPC("RPC out", command)
 	}
-	return c.writer.Encode(command)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	doneChan := ctx.Done()
+	defer cancel()
+	errChan := make(chan error)
+	go func() {
+		defer c.recover()
+		errChan <- c.writer.Encode(command)
+	}()
+	select {
+	case <-doneChan:
+		if err := c.Close(); err != nil {
+			return err
+		}
+		return ctx.Err()
+	case err := <-errChan:
+		return err
+	}
 }
 
 func (c *Connection) replyLoop() {

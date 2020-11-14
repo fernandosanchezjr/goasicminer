@@ -148,5 +148,8 @@ func (pw *Work) SetExtraNonce2(extraNonce utils.Nonce64) utils.Nonce64 {
 
 func (pw *Work) SetNtime(ntime utils.NTime) {
 	pw.Ntime = ntime
-	pw.ready = false
+	pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
+	pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
+	pw.plainHeader[70] = byte((pw.Ntime >> 8) & 0xff)
+	pw.plainHeader[71] = byte(pw.Ntime & 0xff)
 }

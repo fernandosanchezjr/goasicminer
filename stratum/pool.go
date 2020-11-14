@@ -45,6 +45,7 @@ type Pool struct {
 	versions         *utils.VersionSource
 	ReplyChan        chan *protocol.Reply
 	knownExtraNonces map[interface{}]bool
+	currentJobId     string
 }
 
 func NewPool(config config.Pool, workChan PoolWorkChan) *Pool {
@@ -438,6 +439,9 @@ func (p *Pool) processWork() {
 	}
 	var reloadVersions bool
 	defer p.sendRecovery()
+	if p.currentJobId == p.notify.JobId {
+		return
+	}
 	work := NewWork(p.subscription, p.configuration, p.setDifficulty, p.notify, p)
 	if p.versions == nil {
 		reloadVersions = true
@@ -459,4 +463,5 @@ func (p *Pool) processWork() {
 		"prevHash":         utils.HashToString(work.PrevHash),
 		"targetDifficulty": work.TargetDifficulty,
 	}).Infoln("New work")
+	p.currentJobId = work.JobId
 }
