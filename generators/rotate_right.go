@@ -7,12 +7,14 @@ import (
 )
 
 type RotateRight struct {
-	rng *rand.Rand
+	rng    *rand.Rand
+	seeded bool
 }
 
 func NewRotateRight() *RotateRight {
 	return &RotateRight{
-		rng: rand.New(rand.NewSource(utils.RandomInt64())),
+		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
+		seeded: true,
 	}
 }
 
@@ -21,5 +23,9 @@ func (rr *RotateRight) Next(previousState uint64) uint64 {
 }
 
 func (rr *RotateRight) Reseed() {
+	if rr.seeded {
+		return
+	}
+	rr.seeded = true
 	rr.rng.Seed(utils.RandomInt64())
 }

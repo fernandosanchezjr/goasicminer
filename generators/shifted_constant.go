@@ -7,31 +7,55 @@ import (
 )
 
 type ShiftedConstant struct {
-	value uint64
-	rng   *rand.Rand
+	maskByte byte
+	value    uint64
+	rng      *rand.Rand
+	seeded   bool
+	used     int
 }
 
 func NewShiftedConstant(value byte) *ShiftedConstant {
 	c := &ShiftedConstant{
-		rng: rand.New(rand.NewSource(utils.RandomInt64())),
+		maskByte: value,
+		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
+		seeded:   true,
 	}
-	if value != 0x0 {
-		var v = uint64(value & 0xf)
-		for i := 0; i < 16; i++ {
-			c.value = c.value | v
-			v = bits.RotateLeft64(v, 4)
-		}
-	}
+	c.ShuffleMask()
 	return c
 }
 
-func (c *ShiftedConstant) Next(uint64) uint64 {
-	if c.value == 0 {
-		return c.value
+func (c *ShiftedConstant) ShuffleMask() {
+	var v = uint64(c.maskByte)
+	c.value = 0
+	var nibbles [16]int
+	for i := 0; i < 16; i++ {
+		nibbles[i] = i
 	}
-	return c.value >> c.rng.Intn(56)
+	c.rng.Shuffle(16, func(i, j int) {
+		nibbles[i], nibbles[j] = nibbles[j], nibbles[i]
+	})
+	var maxIndex = c.rng.Intn(16)
+	for i := 0; i < maxIndex; i++ {
+		c.value = c.value | v<<(nibbles[i]*4)
+	}
+	if c.value == 0 {
+		c.value = uint64(c.maskByte)
+	}
+}
+
+func (c *ShiftedConstant) Next(uint64) uint64 {
+	c.seeded = false
+	if c.used >= MaxGeneratorReuse {
+		c.ShuffleMask()
+	}
+	c.used += 1
+	return bits.RotateLeft64(c.value, c.rng.Intn(63))
 }
 
 func (c *ShiftedConstant) Reseed() {
+	if c.seeded {
+		return
+	}
+	c.seeded = true
 	c.rng.Seed(utils.RandomInt64())
 }

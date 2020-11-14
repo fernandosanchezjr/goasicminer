@@ -33,10 +33,14 @@ func (t *Task) crc(dataLen byte, data []byte) {
 }
 
 func (t *Task) MarshalBinary() ([]byte, error) {
+	t.Lock()
+	defer t.Unlock()
 	return t.data[:], nil
 }
 
 func (t *Task) Update(task *stratum.Task) {
+	t.Lock()
+	defer t.Unlock()
 	versionCount := t.VersionsCount()
 	t.data[1] = byte(20 + (32 * versionCount) + 2)
 	t.data[2] = t.jobId & 0x7f

@@ -1,18 +1,11 @@
 package base
 
 import (
-	"flag"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
 )
-
-var logDeviceTraffic bool
-
-func init() {
-	flag.BoolVar(&logDeviceTraffic, "log-device-traffic", false, "log device traffic")
-}
 
 type IController interface {
 	String() string
@@ -42,7 +35,7 @@ type Controller struct {
 
 func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
 	return &Controller{device: device, context: ctx, driver: driver, serialNumber: serialNumber,
-		workChan: make(stratum.PoolWorkChan, 1), open: true}
+		workChan: make(stratum.PoolWorkChan, 16), open: true}
 }
 
 func (c *Controller) String() string {

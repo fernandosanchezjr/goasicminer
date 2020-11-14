@@ -67,25 +67,21 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 }
 
 func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
-	destCount := len(dest)
-	rolledCount := len(vs.RolledVersions)
-	if destCount == 0 {
-		return
-	}
-	pos := rng.Intn(len(vs.RolledVersions))
-	for i := 0; i < destCount; i++ {
-		if pos >= rolledCount {
-			pos = 0
-		}
-		dest[i] = vs.RolledVersions[pos]
-		pos += 1
-	}
+	vs.pos = rng.Intn(len(vs.RolledVersions))
+	vs.Retrieve(dest)
 }
 
 func (vs *VersionSource) Clone() *VersionSource {
-	ret := *vs
+	ret := &VersionSource{
+		Version:        vs.Version,
+		Mask:           vs.Mask,
+		minVersionBits: vs.minVersionBits,
+		maxVersionBits: vs.maxVersionBits,
+		bitCount:       vs.bitCount,
+		pos:            0,
+	}
 	ret.RolledVersions = append([]Version{}, vs.RolledVersions...)
-	return &ret
+	return ret
 }
 
 func (vs *VersionSource) Shuffle(rng *rand.Rand) {
