@@ -16,3 +16,7 @@ func (h HashRate) String() string {
 		return humanize.SIWithDigits(float64(h), 2, "H/s")
 	}
 }
+
+func (h HashRate) Fraction(dividend HashRate) float64 {
+	return float64(dividend) / float64(h)
+}

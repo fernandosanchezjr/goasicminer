@@ -18,16 +18,14 @@ import (
 )
 
 const (
-	BM1387BaudDiv            = 1
-	BM1387InitialBaudRate    = 115200
-	BM1387BaudRate           = 375000
-	BM1387NumCores           = 114
-	BM1387MaxJobId           = 0x7f
-	BM1387MidstateCount      = 4
-	BM1387MaxVerifyTasks     = BM1387MidstateCount * BM1387MidstateCount * BM1387MaxJobId
-	BM1387WaitFactor         = 0.5
-	BM1387MaxResponseTimeout = 1 * time.Second
-	//BM1387DiffTimeout        = 5 * time.Second
+	BM1387BaudDiv         = 1
+	BM1387InitialBaudRate = 115200
+	BM1387BaudRate        = 375000
+	BM1387NumCores        = 114
+	BM1387MaxJobId        = 0x7f
+	BM1387MidstateCount   = 4
+	BM1387MaxVerifyTasks  = BM1387MidstateCount * BM1387MidstateCount * BM1387MaxJobId
+	BM1387WaitFactor      = 0.5
 )
 
 type BM1387Controller struct {
@@ -51,11 +49,6 @@ type BM1387Controller struct {
 	defaultFrequency   float64
 	targetChips        int
 	currentJobId       string
-	extraNonceUsed     chan utils.Nonce64
-	reuseExtraNonce    bool
-	versionJumping     bool
-	ntimeRolling       bool
-	//shuffleChan        chan int
 }
 
 func NewBM1387Controller(
@@ -68,7 +61,6 @@ func NewBM1387Controller(
 	rc := &BM1387Controller{IController: controller, quit: make(chan struct{}), frequency: 0.0,
 		currentDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
 		defaultFrequency: defaultFrequency, targetChips: targetChips,
-		//shuffleChan: make(chan int, BM1387MaxVerifyTasks),
 	}
 	rc.allocateTasks()
 	return rc
@@ -305,8 +297,10 @@ func (bm *BM1387Controller) setTiming() {
 	var hashRate utils.HashRate
 	hashRate, bm.fullscanDuration, bm.maxTaskWait = protocol.Timing(bm.chipCount, bm.frequency, BM1387NumCores,
 		BM1387WaitFactor)
+	bm.SetHashRate(hashRate)
 	log.WithFields(log.Fields{
 		"serial":       bm.String(),
+		"frequency":    bm.frequency,
 		"hashRate":     hashRate,
 		"fullScanTime": bm.fullscanDuration,
 		"maxTaskWait":  bm.maxTaskWait,
@@ -315,7 +309,6 @@ func (bm *BM1387Controller) setTiming() {
 
 func (bm *BM1387Controller) initializeTasks() error {
 	bm.verifyQueue = make(chan *base.TaskResult, BM1387MaxVerifyTasks)
-	bm.extraNonceUsed = make(chan utils.Nonce64, BM1387MaxVerifyTasks)
 	bm.waiter.Add(3)
 	go bm.verifyLoop()
 	go bm.readLoop()
@@ -325,11 +318,12 @@ func (bm *BM1387Controller) initializeTasks() error {
 
 func (bm *BM1387Controller) loopRecover(loopName string) {
 	if err := recover(); err != nil {
-		if !strings.Contains(fmt.Sprint(err), "send on closed channel") {
+		if !strings.Contains(fmt.Sprint(err), "send on closed channel") &&
+			!strings.Contains(fmt.Sprint(err), "nil pointer dereference") {
 			log.WithFields(log.Fields{
 				"serial": bm.String(),
 				"loop":   loopName,
-				"error":  err,
+				"error":  fmt.Sprint(err),
 			}).Warnln("Loop error")
 		}
 		bm.waiter.Done()
@@ -341,30 +335,28 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 
 func (bm *BM1387Controller) readLoop() {
 	defer bm.loopRecover("read")
+	var initialized bool
 	buf, err := bm.AllocateReadBuffer()
 	if err != nil {
 		panic(err)
 	}
-	var midstate, index int
-	var read int
+	var midstate, index, read, missing int
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
 	rb := protocol.NewResponseBlock()
 	mainTicker := time.NewTicker(bm.maxTaskWait)
-	var lastReceived = time.Now()
-	var timeoutTicker = time.NewTicker(BM1387MaxResponseTimeout)
 	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
 	for i := 0; i < BM1387MaxVerifyTasks; i++ {
 		verifyTasks[i] = base.NewTaskResult()
 	}
 	var verifyPos int
-	var initialized bool
+	uninitializedTimeoutLoops := int((5 * time.Second) / bm.maxTaskWait)
+	initializedTimeoutLoops := int(time.Second / bm.maxTaskWait)
 	for {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
-			timeoutTicker.Stop()
 			bm.waiter.Done()
 			return
 		case <-mainTicker.C:
@@ -373,16 +365,29 @@ func (bm *BM1387Controller) readLoop() {
 				log.WithFields(log.Fields{
 					"serial": bm.String(),
 					"error":  err.Error(),
-				}).Warnln("Error reading response block")
+				}).Warnln("Read error")
 				mainTicker.Stop()
 				bm.waiter.Done()
 				go bm.Exit()
 				return
 			}
 			if read == 0 {
+				missing += 1
+				if missing > uninitializedTimeoutLoops && !initialized ||
+					missing > initializedTimeoutLoops && initialized {
+					log.WithFields(log.Fields{
+						"serial": bm.String(),
+						"error":  err.Error(),
+					}).Warnln("Read error")
+					mainTicker.Stop()
+					bm.waiter.Done()
+					go bm.Exit()
+					return
+				}
 				continue
+			} else {
+				missing = 0
 			}
-			lastReceived = time.Now()
 			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
 				log.WithFields(log.Fields{
 					"serial": bm.String(),
@@ -394,9 +399,8 @@ func (bm *BM1387Controller) readLoop() {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {
 					continue
-				} else {
-					initialized = true
 				}
+				initialized = true
 				midstate = taskResponse.JobId % BM1387MidstateCount
 				if midstate != 0 {
 					index = taskResponse.JobId - midstate
@@ -417,21 +421,8 @@ func (bm *BM1387Controller) readLoop() {
 					}
 				}
 			}
-		case <-timeoutTicker.C:
-			if time.Since(lastReceived) >= BM1387MaxResponseTimeout && initialized {
-				mainTicker.Stop()
-				bm.waiter.Done()
-				go bm.Exit()
-				return
-			}
 		}
 	}
-}
-
-func (bm *BM1387Controller) shuffleParameters(rng *rand.Rand) {
-	bm.reuseExtraNonce = rng.Intn(2) == 1
-	bm.versionJumping = rng.Intn(2) == 1
-	bm.ntimeRolling = rng.Intn(2) == 1
 }
 
 func (bm *BM1387Controller) writeLoop() {
@@ -439,20 +430,19 @@ func (bm *BM1387Controller) writeLoop() {
 	var task = stratum.NewTask(BM1387MidstateCount, true)
 	var work *stratum.Work
 	var workChan = bm.WorkChannel()
+	var versionSource *utils.VersionSource
 	var generator = generators.NewUint64Generator()
 	var rng = rand.New(rand.NewSource(utils.RandomInt64()))
-	var versionSource *utils.VersionSource
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	var mainTicker = time.NewTicker(bm.fullscanDuration)
 	var shuffleTicker = time.NewTicker(time.Minute)
 	var reseedTicker = time.NewTicker(time.Hour)
-	var currentExtraNonce2, expiredExtraNonce2 utils.Nonce64
 	var diff big.Int
 	var nextPos uint32
 	var warmedUp bool
 	var ntime, ntimeOffset utils.NTime
-	bm.shuffleParameters(rng)
+	var versionStep int
 	for {
 		select {
 		case <-bm.quit:
@@ -461,15 +451,12 @@ func (bm *BM1387Controller) writeLoop() {
 			reseedTicker.Stop()
 			bm.waiter.Done()
 			return
-		case expiredExtraNonce2 = <-bm.extraNonceUsed:
-			if work == nil {
-				continue
-			}
-			if expiredExtraNonce2 == currentExtraNonce2 {
-				currentExtraNonce2 = utils.Nonce64(generator.Next())
-			}
 		case work = <-workChan:
 			ntime = work.Ntime
+			ntimeOffset = 0
+			if versionSource == nil || versionSource.Id != work.VersionsSource.Id {
+				versionSource = work.VersionsSource
+			}
 			generator.Reset()
 			bm.currentJobId = work.JobId
 			bm.submitChan = work.Pool.SubmitChan
@@ -477,17 +464,10 @@ func (bm *BM1387Controller) writeLoop() {
 			bm.poolVersionRolling = work.VersionRolling
 			(&diff).SetInt64(int64(work.Difficulty))
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
-			if versionSource == nil || versionSource.Mask != work.VersionsSource.Mask {
-				versionSource = work.VersionsSource.Clone()
-				versionSource.Shuffle(rng)
-			}
-			currentExtraNonce2 = work.SetExtraNonce2(utils.Nonce64(generator.Next()))
-			if bm.versionJumping {
-				versionSource.RNGRetrieve(rng, versionMasks[:])
-			} else {
-				versionSource.Retrieve(versionMasks[:])
-			}
+			work.SetExtraNonce2(utils.Nonce64(generator.Next()))
 			if warmedUp {
+				versionSource.RNGRetrieve(rng, versionMasks[:])
+				versionStep = 0
 				task.Update(work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
 				currentTask.Update(task)
@@ -513,7 +493,7 @@ func (bm *BM1387Controller) writeLoop() {
 					log.WithFields(log.Fields{
 						"serial": bm.String(),
 						"error":  err.Error(),
-					}).Error("USB write error")
+					}).Error("Write error")
 					mainTicker.Stop()
 					shuffleTicker.Stop()
 					reseedTicker.Stop()
@@ -533,22 +513,16 @@ func (bm *BM1387Controller) writeLoop() {
 			}
 			if warmedUp {
 				currentTask = bm.tasks[nextPos]
-				if bm.reuseExtraNonce {
-					if work.ExtraNonce2 != currentExtraNonce2 {
-						work.SetExtraNonce2(currentExtraNonce2)
-					}
-				} else {
-					work.SetExtraNonce2(utils.Nonce64(generator.Next()))
-				}
-				if bm.versionJumping {
+				work.SetExtraNonce2(utils.Nonce64(generator.Next()))
+				if versionStep >= 32 {
 					versionSource.RNGRetrieve(rng, versionMasks[:])
+					versionStep = 0
 				} else {
 					versionSource.Retrieve(versionMasks[:])
 				}
-				if bm.ntimeRolling {
-					ntimeOffset = utils.NTime(rng.Intn(600))
-					work.SetNtime(ntime + ntimeOffset - 300)
-				}
+				versionStep += 1
+				ntimeOffset = utils.NTime(rng.Intn(256))
+				work.SetNtime(ntime + ntimeOffset)
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}
@@ -556,7 +530,7 @@ func (bm *BM1387Controller) writeLoop() {
 			if versionSource != nil {
 				versionSource.Shuffle(rng)
 			}
-			bm.shuffleParameters(rng)
+			generator.Shuffle()
 		case <-reseedTicker.C:
 			rng.Seed(utils.RandomInt64())
 			generator.Reseed()
@@ -598,22 +572,16 @@ func (bm *BM1387Controller) verifyLoop() {
 			bm.submitChan <- protocol2.NewSubmit(
 				verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
 			)
-			if bm.reuseExtraNonce {
-				bm.extraNonceUsed <- verifyTask.ExtraNonce2
-			}
 			utils.CalculateDifficulty(&hashBig, &resultDiff)
 			diff = utils.Difficulty(resultDiff.Int64())
 			log.WithFields(log.Fields{
-				"serial":          bm.String(),
-				"jobId":           verifyTask.JobId,
-				"extraNonce2":     verifyTask.ExtraNonce2,
-				"nTime":           verifyTask.NTime,
-				"nonce":           verifyTask.Nonce,
-				"version":         verifyTask.Version,
-				"difficulty":      diff,
-				"reuseExtraNonce": bm.reuseExtraNonce,
-				"versionJumping":  bm.versionJumping,
-				"ntimeRolling":    bm.ntimeRolling,
+				"serial":      bm.String(),
+				"jobId":       verifyTask.JobId,
+				"extraNonce2": verifyTask.ExtraNonce2,
+				"nTime":       verifyTask.NTime,
+				"nonce":       verifyTask.Nonce,
+				"version":     verifyTask.Version,
+				"difficulty":  diff,
 			}).Infoln("Result")
 		}
 	}

@@ -1,12 +1,13 @@
 package base
 
 import (
+	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/ziutek/ftdi"
 )
 
 type IDriverCatalog interface {
 	String() string
-	FindControllers(context *Context) ([]IController, error)
+	FindControllers(config *config.Config, context *Context) ([]IController, error)
 }
 
 type DriverCatalog struct {
@@ -28,7 +29,7 @@ func (dc *DriverCatalog) addDriver(driver IDriver) {
 	dc.Drivers[pidVid] = append(drivers, driver)
 }
 
-func (dc *DriverCatalog) FindControllers(context *Context) ([]IController, error) {
+func (dc *DriverCatalog) FindControllers(config *config.Config, context *Context) ([]IController, error) {
 	var controllers []IController
 	var devices []*ftdi.USBDev
 	var ftdiDevice *ftdi.Device
@@ -44,7 +45,7 @@ func (dc *DriverCatalog) FindControllers(context *Context) ([]IController, error
 					if ftdiDevice, err = ftdi.OpenUSBDev(dev, drv.GetChannel()); err != nil {
 						return nil, err
 					}
-					ctrl := drv.NewController(context, drv, ftdiDevice, dev.Serial)
+					ctrl := drv.NewController(config, context, drv, ftdiDevice, dev.Serial)
 					context.Register(ctrl)
 					controllers = append(controllers, ctrl)
 				}

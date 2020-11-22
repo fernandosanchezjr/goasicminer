@@ -3,6 +3,7 @@ package base
 import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
 )
@@ -22,6 +23,7 @@ type IController interface {
 	Write(data []byte) (int, error)
 	AllocateReadBuffer() ([]byte, error)
 	Read(data []byte) (int, error)
+	SetHashRate(hashRate utils.HashRate)
 }
 
 type Controller struct {
@@ -70,6 +72,9 @@ func (c *Controller) Close() {
 }
 
 func (c *Controller) Exit() {
+	if !c.open {
+		return
+	}
 	log.WithFields(log.Fields{
 		"serial": c.String(),
 	}).Infoln("Controller exiting")
@@ -127,4 +132,8 @@ func (c *Controller) AllocateReadBuffer() ([]byte, error) {
 
 func (c *Controller) Read(data []byte) (int, error) {
 	return c.device.Read(data)
+}
+
+func (c *Controller) SetHashRate(hashRate utils.HashRate) {
+	c.context.SetHashRate(c.serialNumber, hashRate)
 }

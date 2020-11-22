@@ -2,6 +2,7 @@ package base
 
 import (
 	"fmt"
+	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/ziutek/ftdi"
 )
 
@@ -9,7 +10,13 @@ type IDriver interface {
 	GetPidVid() PidVid
 	MatchesDevice(manufacturer, productName string) bool
 	String() string
-	NewController(context *Context, driver IDriver, device *ftdi.Device, serialNumber string) IController
+	NewController(
+		config *config.Config,
+		context *Context,
+		driver IDriver,
+		device *ftdi.Device,
+		serialNumber string,
+	) IController
 	Equals(driver IDriver) bool
 	GetChannel() ftdi.Channel
 }
@@ -47,6 +54,7 @@ func (d *Driver) Equals(driver IDriver) bool {
 }
 
 func (d *Driver) NewController(
+	config *config.Config,
 	context *Context,
 	driver IDriver,
 	device *ftdi.Device,

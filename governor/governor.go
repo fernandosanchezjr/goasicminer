@@ -57,16 +57,17 @@ func (g *Governor) Stop() {
 
 func (g *Governor) DeviceScan(work *stratum.Work) {
 	for _, cg := range g.Catalogs {
-		if controllers, err := cg.FindControllers(g.Context); err == nil {
+		if controllers, err := cg.FindControllers(g.Config, g.Context); err == nil {
 			for _, ct := range controllers {
 				if err := ct.Reset(); err != nil {
 					log.WithFields(log.Fields{
 						"serial": ct.String(),
 						"error":  err,
 					}).Warnln("Error resetting controller")
-				} else if work != nil {
-					ct.UpdateWork(work)
 				}
+			}
+			if len(controllers) != 0 && work != nil {
+				g.Context.UpdateWork(work)
 			}
 		}
 	}
