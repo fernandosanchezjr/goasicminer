@@ -48,7 +48,7 @@ func (fbo *FlipBits) Next(previousState uint64) uint64 {
 		fbo.ShuffleMask()
 	}
 	fbo.used += 1
-	return previousState ^ bits.RotateLeft64(fbo.mask, fbo.rng.Intn(63))
+	return previousState ^ bits.RotateLeft64(fbo.mask, fbo.rng.Intn(64))
 }
 
 func (fbo *FlipBits) Reseed() {

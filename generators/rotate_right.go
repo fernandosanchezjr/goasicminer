@@ -19,7 +19,7 @@ func NewRotateRight() *RotateRight {
 }
 
 func (rr *RotateRight) Next(previousState uint64) uint64 {
-	return bits.RotateLeft64(previousState, rr.rng.Intn(63)*-1)
+	return bits.RotateLeft64(previousState, -rr.rng.Intn(64))
 }
 
 func (rr *RotateRight) Reseed() {

@@ -25,6 +25,9 @@ func NewShiftedConstant(value byte) *ShiftedConstant {
 }
 
 func (c *ShiftedConstant) ShuffleMask() {
+	if c.maskByte == 0 {
+		return
+	}
 	var v = uint64(c.maskByte)
 	c.value = 0
 	var nibbles [16]int
@@ -44,12 +47,15 @@ func (c *ShiftedConstant) ShuffleMask() {
 }
 
 func (c *ShiftedConstant) Next(uint64) uint64 {
+	if c.value == 0 {
+		return 0
+	}
 	c.seeded = false
 	if c.used >= MaxGeneratorReuse {
 		c.ShuffleMask()
 	}
 	c.used += 1
-	return bits.RotateLeft64(c.value, c.rng.Intn(63))
+	return bits.RotateLeft64(c.value, c.rng.Intn(64))
 }
 
 func (c *ShiftedConstant) Reseed() {

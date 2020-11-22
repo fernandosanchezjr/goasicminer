@@ -25,6 +25,9 @@ func NewRandomAndMask(mask byte) *RandomAndMask {
 }
 
 func (r *RandomAndMask) ShuffleMask() {
+	if r.maskByte == 0 {
+		return
+	}
 	var v = uint64(r.maskByte)
 	r.mask = 0
 	var nibbles [16]int
@@ -44,12 +47,15 @@ func (r *RandomAndMask) ShuffleMask() {
 }
 
 func (r *RandomAndMask) Next(uint64) uint64 {
+	if r.mask == 0 {
+		return r.rng.Uint64()
+	}
 	r.seeded = false
 	if r.used >= MaxGeneratorReuse {
 		r.ShuffleMask()
 	}
 	r.used += 1
-	return r.rng.Uint64() & bits.RotateLeft64(r.mask, r.rng.Intn(63))
+	return r.rng.Uint64() & bits.RotateLeft64(r.mask, r.rng.Intn(64))
 }
 
 func (r *RandomAndMask) Reseed() {

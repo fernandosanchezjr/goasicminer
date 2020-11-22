@@ -6,7 +6,7 @@ import (
 )
 
 const MaxBitsFlipped = 8
-const MaxFlipBits = 16
+const MaxBitFlipperCount = 64
 const MaxGeneratorReuse = 4
 
 type Generator64 interface {
@@ -71,28 +71,21 @@ func (u *Uint64) Reseed() {
 func NewUint64Generator() *Uint64 {
 	u := NewUint64()
 	var rotators = []Generator64{NewRotateLeft(), NewRotateRight()}
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 4; i++ {
 		u.Add(rotators...)
 	}
-	var reversers = []Generator64{&Reverse{}, &ReverseBytes{}}
-	for i := 0; i < 14; i++ {
-		u.Add(reversers...)
+	var reverses = []Generator64{&Reverse{}, &ReverseBytes{}}
+	for i := 0; i < 4; i++ {
+		u.Add(reverses...)
 	}
 	for i := 0; i < MaxBitsFlipped; i++ {
-		var flipper = NewFlipBits(i)
-		for j := 0; j < MaxFlipBits; j++ {
+		var flipper = NewFlipBits(i + 1)
+		for j := 0; j < MaxBitFlipperCount; j++ {
 			u.Add(flipper)
 		}
 	}
-	var zero = &Zero{}
-	for i := 0; i < 3; i++ {
-		u.Add(zero)
-	}
 	var random = NewRandom()
-	for i := 0; i < 13; i++ {
-		u.Add(random)
-	}
-	for i := 1; i < 0x10; i++ {
+	for i := 0; i < 16; i++ {
 		b := byte(i)
 		u.Add(
 			random, NewShiftedConstant(b), NewRandomAndMask(b), NewRandomOrMask(b),
