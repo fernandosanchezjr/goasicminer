@@ -3,7 +3,6 @@ package utils
 import (
 	log "github.com/sirupsen/logrus"
 	"testing"
-	"time"
 )
 
 func Test_Combinations(t *testing.T) {
@@ -15,10 +14,4 @@ func Test_Combinations(t *testing.T) {
 			log.Printf("%08x", v)
 		}
 	}
-}
-
-func Test_Fragment(t *testing.T) {
-	wait := time.Microsecond * 17125
-	count := (time.Second.Microseconds() / wait.Microseconds()) * 30
-	log.WithField("count", count).Info("Rounded time")
 }
