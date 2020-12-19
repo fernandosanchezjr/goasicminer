@@ -16,6 +16,7 @@ type Context struct {
 	lastVersionId   uint64
 	hashRateChanged bool
 	rng             *rand.Rand
+	workSteps       int
 }
 
 func NewContext() *Context {
@@ -91,6 +92,12 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	var deviceVersionSource *utils.VersionSource
 	var versionChanged = c.lastVersionId != versionSource.Id
 	var workClone *stratum.Work
+	if c.workSteps >= 2 {
+		c.versionSources = map[string]*utils.VersionSource{}
+		c.workSteps = 0
+	} else {
+		c.workSteps += 1
+	}
 	if versionChanged || c.hashRateChanged {
 		versionSource.Shuffle(c.rng)
 	}
@@ -123,6 +130,7 @@ func (c *Context) SetHashRate(serialNumber string, hashRate utils.HashRate) {
 	defer c.controllersMtx.Unlock()
 	c.hashRates[serialNumber] = hashRate
 	c.hashRateChanged = true
+	c.workSteps = 0
 }
 
 func (c *Context) totalHashRate() (total utils.HashRate) {

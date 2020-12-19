@@ -1,4 +1,4 @@
-package generators
+package uint64
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
@@ -6,7 +6,7 @@ import (
 	"math/rand"
 )
 
-type RandomOrMask struct {
+type RandomAndMask struct {
 	maskByte byte
 	mask     uint64
 	rng      *rand.Rand
@@ -14,17 +14,17 @@ type RandomOrMask struct {
 	used     int
 }
 
-func NewRandomOrMask(mask byte) *RandomOrMask {
-	rm := &RandomOrMask{
+func NewRandomAndMask(mask byte) *RandomAndMask {
+	r := &RandomAndMask{
 		maskByte: mask,
 		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded:   true,
 	}
-	rm.ShuffleMask()
-	return rm
+	r.ShuffleMask()
+	return r
 }
 
-func (r *RandomOrMask) ShuffleMask() {
+func (r *RandomAndMask) ShuffleMask() {
 	if r.maskByte == 0 {
 		return
 	}
@@ -46,19 +46,16 @@ func (r *RandomOrMask) ShuffleMask() {
 	}
 }
 
-func (r *RandomOrMask) Next(uint64) uint64 {
+func (r *RandomAndMask) Next(uint64) uint64 {
 	if r.mask == 0 {
 		return r.rng.Uint64()
 	}
 	r.seeded = false
-	if r.used >= MaxGeneratorReuse {
-		r.ShuffleMask()
-	}
-	r.used += 1
-	return r.rng.Uint64() | bits.RotateLeft64(r.mask, r.rng.Intn(64))
+	r.ShuffleMask()
+	return r.rng.Uint64() & bits.RotateLeft64(r.mask, r.rng.Intn(15)-7)
 }
 
-func (r *RandomOrMask) Reseed() {
+func (r *RandomAndMask) Reseed() {
 	if r.seeded {
 		return
 	}

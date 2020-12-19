@@ -1,4 +1,4 @@
-package generators
+package uint64
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
@@ -51,11 +51,8 @@ func (c *ShiftedConstant) Next(uint64) uint64 {
 		return 0
 	}
 	c.seeded = false
-	if c.used >= MaxGeneratorReuse {
-		c.ShuffleMask()
-	}
-	c.used += 1
-	return bits.RotateLeft64(c.value, c.rng.Intn(64))
+	c.ShuffleMask()
+	return bits.RotateLeft64(c.value, c.rng.Intn(15)-7)
 }
 
 func (c *ShiftedConstant) Reseed() {

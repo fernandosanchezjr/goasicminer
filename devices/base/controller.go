@@ -1,6 +1,7 @@
 package base
 
 import (
+	"errors"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
@@ -119,6 +120,9 @@ func (c *Controller) AllocateWriteBuffer() ([]byte, error) {
 }
 
 func (c *Controller) Write(data []byte) (int, error) {
+	if !c.open {
+		return 0, errors.New("device closed")
+	}
 	return c.device.Write(data)
 }
 
@@ -131,6 +135,9 @@ func (c *Controller) AllocateReadBuffer() ([]byte, error) {
 }
 
 func (c *Controller) Read(data []byte) (int, error) {
+	if !c.open {
+		return 0, errors.New("device closed")
+	}
 	return c.device.Read(data)
 }
 

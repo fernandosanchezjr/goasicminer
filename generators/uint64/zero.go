@@ -1,4 +1,4 @@
-package generators
+package uint64
 
 type Zero struct {
 }

@@ -141,8 +141,11 @@ func (pw *Work) ExtraNonce2Mask() utils.Nonce64 {
 }
 
 func (pw *Work) SetExtraNonce2(extraNonce utils.Nonce64) utils.Nonce64 {
-	pw.ExtraNonce2 = extraNonce & pw.ExtraNonce2Mask()
-	pw.ready = false
+	var nextExtraNonce = extraNonce & pw.ExtraNonce2Mask()
+	if pw.ExtraNonce2 != nextExtraNonce {
+		pw.ExtraNonce2 = nextExtraNonce
+		pw.ready = false
+	}
 	return pw.ExtraNonce2
 }
 

@@ -4,6 +4,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/ziutek/ftdi"
+	"time"
 )
 
 type NewPac struct {
@@ -18,10 +19,10 @@ func NewNewPac() *NewPac {
 }
 
 func (np *NewPac) NewController(
-	config *config.Config, context *base.Context, driver base.IDriver, device *ftdi.Device, serialNumber string,
+	config *config.Config, context *base.Context, _ base.IDriver, device *ftdi.Device, serialNumber string,
 ) base.IController {
 	return NewBM1387Controller(
 		np.IDriver.NewController(config, context, np, device, serialNumber),
-		100, 700, 550, 2,
+		100, 700, 550, 2, 1500*time.Millisecond,
 	)
 }

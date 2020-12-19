@@ -57,6 +57,8 @@ func (t *Task) Update(task *stratum.Task) {
 }
 
 func (t *Task) SetBusyWork() {
+	t.Lock()
+	defer t.Unlock()
 	copy(t.data[4:], busyWork)
 	t.data[1] = byte(4 + len(busyWork))
 	t.data[2] = t.jobId & 0x7f

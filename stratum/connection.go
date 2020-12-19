@@ -67,7 +67,7 @@ func NewConnection(address string, replyChan chan *protocol.Reply) (*Connection,
 
 func (c *Connection) recover() {
 	if err := recover(); err != nil {
-		log.WithField("error", err).Error("Call failed")
+		log.WithField("error", fmt.Sprint(err)).Error("Call failed")
 	}
 }
 
@@ -83,7 +83,7 @@ func (c *Connection) NextId() uint64 {
 func (c *Connection) logRPC(prefix string, value interface{}) {
 	if data, err := json.Marshal(value); err != nil {
 		log.WithFields(log.Fields{
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Warnln("RPC marshalling error")
 	} else {
 		log.WithFields(log.Fields{
@@ -124,7 +124,7 @@ func (c *Connection) readReply(replyChan chan *protocol.Reply, errChan chan erro
 			return
 		} else {
 			log.WithFields(log.Fields{
-				"error": err,
+				"error": fmt.Sprint(err),
 			}).Warnln("RPC decode error")
 			errChan <- err
 		}
@@ -150,7 +150,7 @@ func (c *Connection) replyLoop() {
 			cancel()
 			if err = c.Close(); err != nil {
 				log.WithFields(log.Fields{
-					"error": err,
+					"error": fmt.Sprint(err),
 				}).Warnln("Connection close error")
 			}
 			return
@@ -158,7 +158,7 @@ func (c *Connection) replyLoop() {
 			cancel()
 			if err = c.Close(); err != nil {
 				log.WithFields(log.Fields{
-					"error": err,
+					"error": fmt.Sprint(err),
 				}).Warnln("Connection read error")
 			}
 			return

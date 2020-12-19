@@ -151,7 +151,7 @@ func (p *Pool) disconnect() {
 			"url":     p.config.URL,
 			"user":    p.config.User,
 			"timeout": RetryTimeout,
-			"error":   err,
+			"error":   fmt.Sprint(err),
 		}).Println("Pool disconnect error")
 	}
 	p.conn = nil
@@ -171,7 +171,7 @@ func (p *Pool) handleDisconnected() {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool connection error")
 		p.retryTimeout()
 	} else {
@@ -202,7 +202,7 @@ func (p *Pool) handleConnected() {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool subscribe error")
 		p.retryTimeout()
 		p.disconnect()
@@ -222,7 +222,7 @@ func (p *Pool) handleSubscribed() {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool configure error")
 		p.retryTimeout()
 		p.disconnect()
@@ -238,7 +238,7 @@ func (p *Pool) handleConfigured() {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool authorize error")
 		p.retryTimeout()
 		p.disconnect()
@@ -261,7 +261,7 @@ func (p *Pool) handleSubmit(submit *protocol.Submit) {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool submit error")
 		p.retryTimeout()
 		p.disconnect()
@@ -294,7 +294,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			log.WithFields(log.Fields{
 				"url":   p.config.URL,
 				"user":  p.config.User,
-				"error": err,
+				"error": fmt.Sprint(err),
 			}).Println("Pool subscribe response error")
 		} else {
 			p.subscription = sr
@@ -306,7 +306,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			log.WithFields(log.Fields{
 				"url":   p.config.URL,
 				"user":  p.config.User,
-				"error": err,
+				"error": fmt.Sprint(err),
 			}).Println("Pool authorize response error")
 		} else {
 			if ar.Result {
@@ -332,7 +332,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			log.WithFields(log.Fields{
 				"url":   p.config.URL,
 				"user":  p.config.User,
-				"error": err,
+				"error": fmt.Sprint(err),
 			}).Println("Pool configure response error")
 		} else {
 			p.status = Configured
@@ -344,7 +344,7 @@ func (p *Pool) handleMethodResponse(reply *protocol.Reply) {
 			log.WithFields(log.Fields{
 				"url":   p.config.URL,
 				"user":  p.config.User,
-				"error": reply.Error,
+				"error": fmt.Sprint(reply.Error),
 			}).Println("Pool submit error")
 		}
 	default:
@@ -378,7 +378,7 @@ func (p *Pool) handleMiningSetDifficulty(reply *protocol.Reply) {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool SetDifficulty error")
 	} else {
 		log.WithFields(log.Fields{
@@ -396,7 +396,7 @@ func (p *Pool) handleMiningNotify(reply *protocol.Reply) {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool Notify error")
 	} else {
 		p.notify = n
@@ -409,7 +409,7 @@ func (p *Pool) handleSetVersionMask(reply *protocol.Reply) {
 		log.WithFields(log.Fields{
 			"url":   p.config.URL,
 			"user":  p.config.User,
-			"error": err,
+			"error": fmt.Sprint(err),
 		}).Println("Pool SetVersionMask error")
 	} else {
 		p.configuration.VersionRollingMask = svm.VersionRollingMask

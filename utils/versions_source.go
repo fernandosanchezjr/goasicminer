@@ -46,10 +46,10 @@ func (vs *VersionSource) init() {
 		for i := vs.minVersionBits; i < vs.maxVersionBits; i++ {
 			combinations := combin.Combinations(vs.bitCount, i)
 			totalCombinations := len(combinations)
-			for i := 0; i < totalCombinations; i++ {
+			for j := 0; j < totalCombinations; j++ {
 				tmpMask = 0x0
-				for j := 0; j < len(combinations[i]); j++ {
-					tmpMask = tmpMask | 1<<bitPositions[combinations[i][j]]
+				for k := 0; k < len(combinations[j]); k++ {
+					tmpMask = tmpMask | 1<<bitPositions[combinations[j][k]]
 				}
 				vs.RolledVersions = append(vs.RolledVersions, vs.Version|tmpMask)
 			}
@@ -89,20 +89,23 @@ func (vs *VersionSource) Clone(fraction float64) *VersionSource {
 	}
 	var versionCount = len(vs.RolledVersions)
 	var fractionCount = int(float64(versionCount) * fraction)
+	ret.RolledVersions = make([]Version, fractionCount)
 	for i := 0; i < fractionCount; i++ {
 		if vs.pos >= versionCount {
 			vs.pos = 0
 		}
-		ret.RolledVersions = append(ret.RolledVersions, vs.RolledVersions[vs.pos])
+		ret.RolledVersions[i] = vs.RolledVersions[vs.pos]
 		vs.pos += 1
 	}
 	return ret
 }
 
 func (vs *VersionSource) Shuffle(rng *rand.Rand) {
-	rng.Shuffle(len(vs.RolledVersions), func(i, j int) {
-		vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
-	})
+	rng.Shuffle(len(vs.RolledVersions), vs.shuffler)
+}
+
+func (vs *VersionSource) shuffler(i, j int) {
+	vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
 }
 
 func (vs *VersionSource) ResetPos() {

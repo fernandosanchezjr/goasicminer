@@ -4,6 +4,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/ziutek/ftdi"
+	"time"
 )
 
 type R606 struct {
@@ -18,7 +19,7 @@ func NewR606() *R606 {
 }
 
 func (r606 *R606) NewController(
-	config *config.Config, context *base.Context, driver base.IDriver, device *ftdi.Device, serialNumber string,
+	config *config.Config, context *base.Context, _ base.IDriver, device *ftdi.Device, serialNumber string,
 ) base.IController {
 	var frequency = 700.0
 	for _, cfg := range config.R606 {
@@ -28,6 +29,6 @@ func (r606 *R606) NewController(
 	}
 	return NewBM1387Controller(
 		r606.IDriver.NewController(config, context, r606, device, serialNumber),
-		200, 1200, frequency, 12,
+		200, 1200, frequency, 12, 300*time.Millisecond,
 	)
 }

@@ -1,8 +1,7 @@
-package generators
+package uint64
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"math/bits"
 	"math/rand"
 )
 
@@ -44,11 +43,8 @@ func (fbo *FlipBits) ShuffleMask() {
 
 func (fbo *FlipBits) Next(previousState uint64) uint64 {
 	fbo.seeded = false
-	if fbo.used >= MaxGeneratorReuse {
-		fbo.ShuffleMask()
-	}
-	fbo.used += 1
-	return previousState ^ bits.RotateLeft64(fbo.mask, fbo.rng.Intn(64))
+	fbo.ShuffleMask()
+	return previousState ^ fbo.mask
 }
 
 func (fbo *FlipBits) Reseed() {
