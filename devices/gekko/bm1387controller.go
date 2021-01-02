@@ -330,11 +330,11 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 				"serial": bm.String(),
 				"loop":   loopName,
 				"error":  fmt.Sprint(err),
-			}).Warnln("Loop error")
+			}).Error("Loop error")
 		}
 		bm.waiter.Done()
 		if !bm.shuttingDown {
-			go bm.Exit()
+			bm.Exit()
 		}
 	}
 }
@@ -352,13 +352,13 @@ func (bm *BM1387Controller) readLoop() {
 	var started time.Time
 	var initializationComplete bool
 	rb := protocol.NewResponseBlock()
-	mainTicker := time.NewTicker(bm.fullscanDuration)
+	mainTicker := time.NewTicker(bm.maxTaskWait)
 	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
 	for i := 0; i < BM1387MaxVerifyTasks; i++ {
 		verifyTasks[i] = base.NewTaskResult()
 	}
 	var verifyPos int
-	timeoutLoops := int(bm.timeout / bm.fullscanDuration)
+	timeoutLoops := int(bm.timeout / bm.maxTaskWait)
 	for {
 		select {
 		case <-bm.quit:
@@ -377,7 +377,7 @@ func (bm *BM1387Controller) readLoop() {
 				}).Error("Read error")
 				mainTicker.Stop()
 				bm.waiter.Done()
-				go bm.Exit()
+				bm.Exit()
 				return
 			}
 			if initializationComplete && time.Since(started) >= bm.timeout {
@@ -387,10 +387,10 @@ func (bm *BM1387Controller) readLoop() {
 				}).Error("Read timeout")
 				mainTicker.Stop()
 				bm.waiter.Done()
-				go bm.Exit()
+				bm.Exit()
 				return
 			}
-			if read == 0 {
+			if initializationComplete && read == 0 {
 				missing += 1
 				if missing > timeoutLoops {
 					log.WithFields(log.Fields{
@@ -399,7 +399,7 @@ func (bm *BM1387Controller) readLoop() {
 					}).Error("Read error")
 					mainTicker.Stop()
 					bm.waiter.Done()
-					go bm.Exit()
+					bm.Exit()
 					return
 				}
 				continue
@@ -469,7 +469,7 @@ func (bm *BM1387Controller) writeLoop() {
 			headerGenerator.Reseed()
 		case work = <-workChan:
 			ntime = work.Ntime
-			headerGenerator.Reset(work.Ntime, work.VersionsSource)
+			headerGenerator.Reset(work.ExtraNonceSource, work.Ntime, work.VersionsSource, work.NTimeSpace)
 			bm.currentJobId = work.JobId
 			bm.submitChan = work.Pool.SubmitChan
 			bm.poolVersion = work.Version
@@ -508,7 +508,7 @@ func (bm *BM1387Controller) writeLoop() {
 					mainTicker.Stop()
 					reseedTicker.Stop()
 					bm.waiter.Done()
-					go bm.Exit()
+					bm.Exit()
 					return
 				}
 				if written != len(data) {
@@ -519,7 +519,7 @@ func (bm *BM1387Controller) writeLoop() {
 					mainTicker.Stop()
 					reseedTicker.Stop()
 					bm.waiter.Done()
-					go bm.Exit()
+					bm.Exit()
 					return
 				}
 			}

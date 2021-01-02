@@ -5,6 +5,11 @@ import (
 )
 
 type ReverseBytes struct {
+	id uint64
+}
+
+func NewReverseBytes() *ReverseBytes {
+	return &ReverseBytes{id: NextId()}
 }
 
 func (*ReverseBytes) Next(previousState uint64) uint64 {
@@ -12,4 +17,12 @@ func (*ReverseBytes) Next(previousState uint64) uint64 {
 }
 
 func (*ReverseBytes) Reseed() {
+}
+
+func (r *ReverseBytes) Clone() Generator64 {
+	return r
+}
+
+func (r *ReverseBytes) Id() uint64 {
+	return r.id
 }

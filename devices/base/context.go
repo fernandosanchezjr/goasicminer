@@ -1,6 +1,8 @@
 package base
 
 import (
+	"github.com/fernandosanchezjr/goasicminer/generators/ntime"
+	uint642 "github.com/fernandosanchezjr/goasicminer/generators/uint64"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
@@ -9,22 +11,30 @@ import (
 )
 
 type Context struct {
-	controllersMtx  sync.Mutex
-	controllers     map[string]IController
-	hashRates       map[string]utils.HashRate
-	versionSources  map[string]*utils.VersionSource
-	lastVersionId   uint64
-	hashRateChanged bool
-	rng             *rand.Rand
-	workSteps       int
+	controllersMtx   sync.Mutex
+	controllers      map[string]IController
+	hashRates        map[string]utils.HashRate
+	versionSources   map[string]*utils.VersionSource
+	ntimeSpaces      map[string]*ntime.NTimeSpace
+	extraNonceSpaces map[string]*uint642.Uint64
+	ntimeSpace       *ntime.NTimeSpace
+	extraNonceSpace  *uint642.Uint64
+	lastVersionId    uint64
+	hashRateChanged  bool
+	rng              *rand.Rand
+	workSteps        int
 }
 
 func NewContext() *Context {
 	c := &Context{
-		controllers:    map[string]IController{},
-		hashRates:      map[string]utils.HashRate{},
-		versionSources: map[string]*utils.VersionSource{},
-		rng:            rand.New(rand.NewSource(utils.RandomInt64())),
+		controllers:      map[string]IController{},
+		hashRates:        map[string]utils.HashRate{},
+		versionSources:   map[string]*utils.VersionSource{},
+		ntimeSpaces:      map[string]*ntime.NTimeSpace{},
+		extraNonceSpaces: map[string]*uint642.Uint64{},
+		ntimeSpace:       ntime.NewNTimeSpace(),
+		extraNonceSpace:  uint642.NewUint64Generator(),
+		rng:              rand.New(rand.NewSource(utils.RandomInt64())),
 	}
 	return c
 }
@@ -57,6 +67,8 @@ func (c *Context) Unregister(controller IController) {
 	delete(c.controllers, serialNumber)
 	delete(c.hashRates, serialNumber)
 	delete(c.versionSources, serialNumber)
+	delete(c.ntimeSpaces, serialNumber)
+	delete(c.extraNonceSpaces, serialNumber)
 	c.hashRateChanged = true
 }
 
@@ -90,16 +102,20 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 	var hashPower float64
 	var versionSource = work.VersionsSource
 	var deviceVersionSource *utils.VersionSource
+	var deviceNTimeSpace *ntime.NTimeSpace
+	var extraNonceSource *uint642.Uint64
 	var versionChanged = c.lastVersionId != versionSource.Id
 	var workClone *stratum.Work
-	if c.workSteps >= 2 {
+	if c.workSteps >= 2 || c.hashRateChanged {
 		c.versionSources = map[string]*utils.VersionSource{}
+		c.ntimeSpaces = map[string]*ntime.NTimeSpace{}
+		c.extraNonceSpaces = map[string]*uint642.Uint64{}
+		versionSource.Shuffle(c.rng)
+		c.ntimeSpace.Shuffle(c.rng)
+		c.extraNonceSpace.Shuffle()
 		c.workSteps = 0
 	} else {
 		c.workSteps += 1
-	}
-	if versionChanged || c.hashRateChanged {
-		versionSource.Shuffle(c.rng)
 	}
 	for _, ct := range c.controllers {
 		serialNumber = ct.String()
@@ -107,6 +123,8 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 		hashPower = totalHashRate.Fraction(deviceHashRate)
 		workClone = work.Clone()
 		deviceVersionSource = c.versionSources[serialNumber]
+		deviceNTimeSpace = c.ntimeSpaces[serialNumber]
+		extraNonceSource = c.extraNonceSpaces[serialNumber]
 		if c.hashRateChanged {
 			log.WithFields(log.Fields{
 				"serial":        serialNumber,
@@ -117,9 +135,15 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 		}
 		if c.hashRateChanged || versionChanged || deviceVersionSource == nil {
 			deviceVersionSource = versionSource.Clone(hashPower)
+			deviceNTimeSpace = c.ntimeSpace.Clone(hashPower)
+			extraNonceSource = c.extraNonceSpace.Clone(hashPower)
 			c.versionSources[serialNumber] = deviceVersionSource
+			c.ntimeSpaces[serialNumber] = deviceNTimeSpace
+			c.extraNonceSpaces[serialNumber] = extraNonceSource
 		}
 		workClone.VersionsSource = deviceVersionSource
+		workClone.NTimeSpace = deviceNTimeSpace
+		workClone.ExtraNonceSource = extraNonceSource
 		ct.UpdateWork(workClone)
 	}
 	c.hashRateChanged = false

@@ -5,42 +5,47 @@ import (
 	"math/rand"
 )
 
-type Random struct {
+type RandomAdd struct {
 	id     uint64
 	rng    *rand.Rand
+	start  uint64
+	offset uint64
 	seeded bool
 }
 
-func NewRandom() *Random {
-	r := &Random{
+func NewRandomAdd(offset uint64) *RandomAdd {
+	r := &RandomAdd{
 		id:     NextId(),
 		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded: true,
+		offset: offset,
 	}
+	r.start = r.rng.Uint64()
 	return r
 }
 
-func (r *Random) Next(uint64) uint64 {
-	r.seeded = false
-	return r.rng.Uint64()
+func (r *RandomAdd) Next(uint64) uint64 {
+	r.start += r.offset
+	return r.start
 }
 
-func (r *Random) Reseed() {
+func (r *RandomAdd) Reseed() {
 	if r.seeded {
 		return
 	}
 	r.seeded = true
 	r.rng.Seed(utils.RandomInt64())
+	r.start = r.rng.Uint64()
 }
 
-func (r *Random) Clone() Generator64 {
-	return &Random{
+func (r *RandomAdd) Clone() Generator64 {
+	return &RandomAdd{
 		id:     r.id,
 		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded: true,
 	}
 }
 
-func (r *Random) Id() uint64 {
+func (r *RandomAdd) Id() uint64 {
 	return r.id
 }

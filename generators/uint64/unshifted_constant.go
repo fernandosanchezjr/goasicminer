@@ -2,11 +2,10 @@ package uint64
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"math/bits"
 	"math/rand"
 )
 
-type ShiftedConstant struct {
+type UnshiftedConstant struct {
 	id       uint64
 	maskByte byte
 	value    uint64
@@ -14,8 +13,8 @@ type ShiftedConstant struct {
 	seeded   bool
 }
 
-func NewShiftedConstant(value byte) *ShiftedConstant {
-	c := &ShiftedConstant{
+func NewUnshiftedConstant(value byte) *UnshiftedConstant {
+	c := &UnshiftedConstant{
 		id:       NextId(),
 		maskByte: value,
 		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
@@ -25,7 +24,7 @@ func NewShiftedConstant(value byte) *ShiftedConstant {
 	return c
 }
 
-func (c *ShiftedConstant) ShuffleMask() {
+func (c *UnshiftedConstant) ShuffleMask() {
 	if c.maskByte == 0 {
 		return
 	}
@@ -45,16 +44,16 @@ func (c *ShiftedConstant) ShuffleMask() {
 	}
 }
 
-func (c *ShiftedConstant) Next(uint64) uint64 {
+func (c *UnshiftedConstant) Next(uint64) uint64 {
 	if c.value == 0 {
 		return 0
 	}
 	c.seeded = false
 	c.ShuffleMask()
-	return bits.RotateLeft64(c.value, c.rng.Intn(64))
+	return c.value
 }
 
-func (c *ShiftedConstant) Reseed() {
+func (c *UnshiftedConstant) Reseed() {
 	if c.seeded {
 		return
 	}
@@ -62,8 +61,8 @@ func (c *ShiftedConstant) Reseed() {
 	c.rng.Seed(utils.RandomInt64())
 }
 
-func (c *ShiftedConstant) Clone() Generator64 {
-	return &ShiftedConstant{
+func (c *UnshiftedConstant) Clone() Generator64 {
+	return &UnshiftedConstant{
 		id:       c.id,
 		maskByte: c.maskByte,
 		value:    c.value,
@@ -72,6 +71,6 @@ func (c *ShiftedConstant) Clone() Generator64 {
 	}
 }
 
-func (c *ShiftedConstant) Id() uint64 {
+func (c *UnshiftedConstant) Id() uint64 {
 	return c.id
 }

@@ -7,21 +7,19 @@ import (
 )
 
 type RandomXorMask struct {
+	id       uint64
 	maskByte byte
 	mask     uint64
 	rng      *rand.Rand
 	seeded   bool
-	nibbles  [16]int
 }
 
 func NewRandomXorMask(mask byte) *RandomXorMask {
 	rm := &RandomXorMask{
+		id:       NextId(),
 		maskByte: mask,
 		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded:   true,
-	}
-	for i := 0; i < 16; i++ {
-		rm.nibbles[i] = i
 	}
 	rm.ShuffleMask()
 	return rm
@@ -33,27 +31,28 @@ func (r *RandomXorMask) ShuffleMask() {
 	}
 	var v = uint64(r.maskByte)
 	r.mask = 0
-	r.rng.Shuffle(16, r.shufflePositions)
+	var nibbles NibblePositions
+	for i := 0; i < 16; i++ {
+		nibbles[i] = i
+	}
+	r.rng.Shuffle(16, (&nibbles).shuffler)
 	var maxIndex = r.rng.Intn(16)
 	for i := 0; i < maxIndex; i++ {
-		r.mask = r.mask | v<<(r.nibbles[i]*4)
+		r.mask = r.mask | v<<(nibbles[i]*4)
 	}
 	if r.mask == 0 {
 		r.mask = uint64(r.maskByte)
 	}
 }
 
-func (r *RandomXorMask) shufflePositions(i, j int) {
-	r.nibbles[i], r.nibbles[j] = r.nibbles[j], r.nibbles[i]
-}
-
-func (r *RandomXorMask) Next(uint64) uint64 {
+func (r *RandomXorMask) Next(prevState uint64) uint64 {
 	if r.mask == 0 {
 		return r.rng.Uint64()
 	}
 	r.seeded = false
 	r.ShuffleMask()
-	return r.rng.Uint64() ^ bits.RotateLeft64(r.mask, r.rng.Intn(15)-7)
+	//return r.rng.Uint64() ^ bits.RotateLeft64(r.mask, r.rng.Intn(64))
+	return prevState ^ bits.RotateLeft64(r.mask, r.rng.Intn(64))
 }
 
 func (r *RandomXorMask) Reseed() {
@@ -62,4 +61,18 @@ func (r *RandomXorMask) Reseed() {
 	}
 	r.seeded = true
 	r.rng.Seed(utils.RandomInt64())
+}
+
+func (r *RandomXorMask) Clone() Generator64 {
+	return &RandomXorMask{
+		id:       r.id,
+		maskByte: r.maskByte,
+		mask:     r.mask,
+		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
+		seeded:   true,
+	}
+}
+
+func (r *RandomXorMask) Id() uint64 {
+	return r.id
 }

@@ -11,9 +11,9 @@ import (
 const (
 	MaxExtraNonceReuse = 32
 	MinExtraNonceReuse = 8
-	MaxNTimeReuse      = 32
+	MaxNTimeReuse      = 16
 	MinNTimeReuse      = 4
-	MaxVersionReuse    = 32
+	MaxVersionReuse    = 16
 	MinVersionReuse    = 4
 )
 
@@ -41,7 +41,6 @@ type HeaderFields struct {
 
 func NewHeaderFields(iterations int) *HeaderFields {
 	var hf = &HeaderFields{
-		extraNonce2:         uint642.NewUint64Generator(),
 		nTime:               ntime.NewNtime(),
 		version:             version.NewVersion(),
 		strategies:          GeneratorStrategies(),
@@ -59,28 +58,40 @@ func (hf *HeaderFields) strategiesShuffler(i, j int) {
 }
 
 func (hf *HeaderFields) setMaxReuse() {
-	hf.maxStrategyIterations = hf.iterationsPerSecond * (1 + hf.rng.Intn(5))
-	hf.maxExtraNonceReuse = MaxExtraNonceReuse - hf.rng.Intn(MaxExtraNonceReuse-MinExtraNonceReuse)
-	hf.maxNtimeReuse = MinNTimeReuse + hf.rng.Intn(MaxNTimeReuse-MinNTimeReuse)
-	hf.maxVersionReuse = MinVersionReuse + hf.rng.Intn(MaxVersionReuse-MinVersionReuse)
+	hf.maxStrategyIterations = hf.iterationsPerSecond
+	var extraNonceReuse = utils.Min(MaxExtraNonceReuse, hf.iterationsPerSecond)
+	hf.maxExtraNonceReuse = extraNonceReuse - hf.rng.Intn(extraNonceReuse-MinExtraNonceReuse)
+	hf.maxNtimeReuse = MinNTimeReuse + hf.rng.Intn(utils.Min(MaxNTimeReuse, hf.iterationsPerSecond-MinNTimeReuse))
+	hf.maxVersionReuse = MinVersionReuse + hf.rng.Intn(
+		utils.Min(MaxVersionReuse, hf.iterationsPerSecond-MinVersionReuse))
 }
 
-func (hf *HeaderFields) Reset(nTime utils.NTime, versionSource *utils.VersionSource) {
-	hf.nTime.Reset(nTime)
+func (hf *HeaderFields) Reset(
+	extraNonceSource *uint642.Uint64,
+	nTime utils.NTime,
+	versionSource *utils.VersionSource,
+	ntimeSpace *ntime.NTimeSpace,
+) {
+	hf.extraNonce2 = extraNonceSource
+	hf.extraNonce2.Reset()
+	hf.nTime.Reset(nTime, ntimeSpace)
 	hf.version.Reset(versionSource)
 	hf.generated = map[Generated]byte{}
 }
 
 func (hf *HeaderFields) Reseed() {
 	hf.rng.Seed(utils.RandomInt64())
-	hf.extraNonce2.Reseed()
+	if hf.extraNonce2 != nil {
+		hf.extraNonce2.Reseed()
+	}
 	hf.nTime.Reseed()
 	hf.version.Reseed()
-	hf.Shuffle()
 }
 
 func (hf *HeaderFields) Shuffle() {
-	hf.extraNonce2.Shuffle()
+	if hf.extraNonce2 != nil {
+		hf.extraNonce2.Shuffle()
+	}
 	hf.nTime.Shuffle()
 	hf.version.Shuffle()
 	hf.rng.Shuffle(len(hf.strategies), hf.strategiesShuffler)

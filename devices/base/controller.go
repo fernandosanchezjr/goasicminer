@@ -54,7 +54,7 @@ func (c *Controller) recover() {
 		log.WithFields(log.Fields{
 			"serial": c.String(),
 			"error":  err,
-		}).Warnln("Error recovery")
+		}).Error("Error recovery")
 	}
 }
 
@@ -80,7 +80,6 @@ func (c *Controller) Exit() {
 		"serial": c.String(),
 	}).Infoln("Controller exiting")
 	c.Close()
-	defer c.recover()
 	c.context.Unregister(c)
 }
 

@@ -5,15 +5,13 @@ import (
 	"math/rand"
 )
 
-const MaxNTimeOffset = 1024
-const MinNTimeOffset = 512
-
 type NTime struct {
 	maxOffset  int
 	halfOffset int
 	backtrack  bool
 	center     utils.NTime
 	rng        *rand.Rand
+	space      *NTimeSpace
 }
 
 func NewNtime() *NTime {
@@ -27,12 +25,12 @@ func NewNtime() *NTime {
 }
 
 func (n *NTime) Next() utils.NTime {
-	var ntimeOffset = n.rng.Intn(n.maxOffset) - n.halfOffset
-	return n.center + utils.NTime(ntimeOffset)
+	return n.center + utils.NTime(n.space.offsets[n.rng.Intn(n.space.count)])
 }
 
-func (n *NTime) Reset(center utils.NTime) {
+func (n *NTime) Reset(center utils.NTime, space *NTimeSpace) {
 	n.center = center
+	n.space = space
 }
 
 func (n *NTime) Reseed() {
@@ -40,9 +38,8 @@ func (n *NTime) Reseed() {
 }
 
 func (n *NTime) Shuffle() {
-	n.maxOffset = MaxNTimeOffset - n.rng.Intn(MaxNTimeOffset-MinNTimeOffset)
-	n.halfOffset = n.rng.Intn(n.maxOffset / 2)
-	if n.halfOffset == 0 {
-		n.halfOffset = 1
+	if n.space == nil {
+		return
 	}
+	n.space.Shuffle(n.rng)
 }

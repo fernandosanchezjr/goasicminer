@@ -2,11 +2,10 @@ package uint64
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	"math/bits"
 	"math/rand"
 )
 
-type RandomAndMask struct {
+type UnshiftedRandomXorMask struct {
 	id       uint64
 	maskByte byte
 	mask     uint64
@@ -14,18 +13,18 @@ type RandomAndMask struct {
 	seeded   bool
 }
 
-func NewRandomAndMask(mask byte) *RandomAndMask {
-	r := &RandomAndMask{
+func NewUnshiftedRandomXorMask(mask byte) *UnshiftedRandomXorMask {
+	rm := &UnshiftedRandomXorMask{
 		id:       NextId(),
 		maskByte: mask,
 		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded:   true,
 	}
-	r.ShuffleMask()
-	return r
+	rm.ShuffleMask()
+	return rm
 }
 
-func (r *RandomAndMask) ShuffleMask() {
+func (r *UnshiftedRandomXorMask) ShuffleMask() {
 	if r.maskByte == 0 {
 		return
 	}
@@ -45,17 +44,17 @@ func (r *RandomAndMask) ShuffleMask() {
 	}
 }
 
-func (r *RandomAndMask) Next(prevState uint64) uint64 {
+func (r *UnshiftedRandomXorMask) Next(prevState uint64) uint64 {
 	if r.mask == 0 {
 		return r.rng.Uint64()
 	}
 	r.seeded = false
 	r.ShuffleMask()
-	//return r.rng.Uint64() & bits.RotateLeft64(r.mask, r.rng.Intn(64))
-	return prevState & bits.RotateLeft64(r.mask, r.rng.Intn(64))
+	//return r.rng.Uint64() ^ bits.RotateLeft64(r.mask, r.rng.Intn(64))
+	return prevState ^ r.mask
 }
 
-func (r *RandomAndMask) Reseed() {
+func (r *UnshiftedRandomXorMask) Reseed() {
 	if r.seeded {
 		return
 	}
@@ -63,8 +62,8 @@ func (r *RandomAndMask) Reseed() {
 	r.rng.Seed(utils.RandomInt64())
 }
 
-func (r *RandomAndMask) Clone() Generator64 {
-	return &RandomAndMask{
+func (r *UnshiftedRandomXorMask) Clone() Generator64 {
+	return &UnshiftedRandomXorMask{
 		id:       r.id,
 		maskByte: r.maskByte,
 		mask:     r.mask,
@@ -73,6 +72,6 @@ func (r *RandomAndMask) Clone() Generator64 {
 	}
 }
 
-func (r *RandomAndMask) Id() uint64 {
+func (r *UnshiftedRandomXorMask) Id() uint64 {
 	return r.id
 }

@@ -73,8 +73,10 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 }
 
 func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
-	vs.pos = rng.Intn(len(vs.RolledVersions))
-	vs.Retrieve(dest)
+	versionCount := len(vs.RolledVersions)
+	for pos := range dest {
+		dest[pos] = vs.RolledVersions[rng.Intn(versionCount)]
+	}
 }
 
 func (vs *VersionSource) Clone(fraction float64) *VersionSource {

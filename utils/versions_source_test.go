@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func Test_Combinations(t *testing.T) {
+func Test_VersionCombinations(t *testing.T) {
 	vs := NewVersionSource(0x20000000, 0x1fffe000)
 	var versionCount [4]Version
 	for i := 0; i < 16; i++ {

@@ -5,16 +5,19 @@ import (
 	"math/rand"
 )
 
+type FlipBitsPositions [64]int
+
 type FlipBits struct {
+	id     uint64
 	bits   int
 	mask   uint64
 	rng    *rand.Rand
 	seeded bool
-	used   int
 }
 
 func NewFlipBits(bits int) *FlipBits {
 	fb := &FlipBits{
+		id:     NextId(),
 		bits:   bits,
 		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded: false,
@@ -28,13 +31,11 @@ func (fbo *FlipBits) ShuffleMask() {
 		fbo.mask = 1
 		return
 	}
-	var bitPositions [64]int
+	var bitPositions FlipBitsPositions
 	for i := 0; i < 64; i++ {
 		bitPositions[i] = i
 	}
-	fbo.rng.Shuffle(64, func(i, j int) {
-		bitPositions[i], bitPositions[j] = bitPositions[j], bitPositions[i]
-	})
+	fbo.rng.Shuffle(64, (&bitPositions).shuffler)
 	fbo.mask = 0
 	for i := 0; i < fbo.bits; i++ {
 		fbo.mask = fbo.mask | 1<<bitPositions[i]
@@ -53,4 +54,22 @@ func (fbo *FlipBits) Reseed() {
 	}
 	fbo.seeded = true
 	fbo.rng.Seed(utils.RandomInt64())
+}
+
+func (fbp *FlipBitsPositions) shuffler(i, j int) {
+	fbp[i], fbp[j] = fbp[j], fbp[i]
+}
+
+func (fbo *FlipBits) Clone() Generator64 {
+	return &FlipBits{
+		id:     fbo.id,
+		bits:   fbo.bits,
+		mask:   fbo.mask,
+		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
+		seeded: true,
+	}
+}
+
+func (fbo *FlipBits) Id() uint64 {
+	return fbo.id
 }

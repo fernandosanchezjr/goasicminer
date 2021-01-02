@@ -29,6 +29,6 @@ func (r606 *R606) NewController(
 	}
 	return NewBM1387Controller(
 		r606.IDriver.NewController(config, context, r606, device, serialNumber),
-		200, 1200, frequency, 12, 300*time.Millisecond,
+		200, 1200, frequency, 12, time.Second,
 	)
 }
