@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 )
 
-const MaxBitsFlipped = 16
-const MaxBitFlipperCount = 64
+const MaxBitsFlipped = 8
+const MaxBitFlipperCount = 16
 
 var id uint64
 
@@ -108,37 +108,21 @@ func (u *Uint64) Clone(fraction float64) *Uint64 {
 
 func NewUint64Generator() *Uint64 {
 	u := NewUint64()
-	var rotators = []Generator64{NewRotateLeft(), NewRotateRight()}
-	for i := 0; i < 16; i++ {
-		u.Add(rotators...)
-	}
-	var reverses = []Generator64{NewReverse(), NewReverseBytes()}
-	for i := 0; i < 4; i++ {
-		u.Add(reverses...)
-	}
 	for i := 0; i < MaxBitsFlipped; i++ {
 		var flipper = NewFlipBits(i + 1)
 		for j := 0; j < MaxBitFlipperCount; j++ {
-			u.Add(flipper)
+			u.Add(flipper, flipper)
 		}
 	}
-	random := NewRandom()
-	shaiv := NewSHAIV()
+	var random = NewRandom()
 	for i := 0; i < 16; i++ {
 		var byteVal = byte(i)
-		var uintVal = uint64(i)
 		u.Add(
 			random,
-			shaiv,
-			NewRandomAdd(uintVal),
 			NewShiftedConstant(byteVal),
-			NewUnshiftedConstant(byteVal),
 			NewRandomAndMask(byteVal),
-			NewUnshiftedRandomAndMask(byteVal),
 			NewRandomXorMask(byteVal),
-			NewUnshiftedRandomXorMask(byteVal),
 			NewRandomOrMask(byteVal),
-			NewUnshiftedRandomOrMask(byteVal),
 		)
 	}
 	u.Shuffle()

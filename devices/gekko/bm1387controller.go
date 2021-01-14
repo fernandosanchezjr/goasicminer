@@ -298,7 +298,6 @@ func (bm *BM1387Controller) setTiming() error {
 	hashRate, bm.fullscanDuration, bm.maxTaskWait = protocol.Timing(bm.chipCount, bm.frequency, BM1387NumCores,
 		BM1387WaitFactor)
 	var latency = int(bm.fullscanDuration.Round(time.Millisecond) / time.Millisecond)
-	bm.SetHashRate(hashRate)
 	if err := bm.Device().SetLatencyTimer(latency); err != nil {
 		return err
 	}
@@ -345,27 +344,28 @@ func (bm *BM1387Controller) readLoop() {
 	if err != nil {
 		panic(err)
 	}
-	var midstate, index, read, missing int
+	var midstate, index, read int
+	var missing int
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
-	var started time.Time
+	//var started time.Time
 	var initializationComplete bool
 	rb := protocol.NewResponseBlock()
-	mainTicker := time.NewTicker(bm.maxTaskWait)
+	mainTicker := time.NewTicker(bm.fullscanDuration)
 	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
 	for i := 0; i < BM1387MaxVerifyTasks; i++ {
 		verifyTasks[i] = base.NewTaskResult()
 	}
 	var verifyPos int
-	timeoutLoops := int(bm.timeout / bm.maxTaskWait)
+	timeoutLoops := int(bm.timeout / bm.fullscanDuration)
 	for {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
 			bm.waiter.Done()
 			return
-		case started = <-mainTicker.C:
+		case <-mainTicker.C:
 			rb.Count = 0
 			if !bm.initialized {
 				continue
@@ -380,16 +380,16 @@ func (bm *BM1387Controller) readLoop() {
 				bm.Exit()
 				return
 			}
-			if initializationComplete && time.Since(started) >= bm.timeout {
-				log.WithFields(log.Fields{
-					"serial": bm.String(),
-					"error":  err.Error(),
-				}).Error("Read timeout")
-				mainTicker.Stop()
-				bm.waiter.Done()
-				bm.Exit()
-				return
-			}
+			//if initializationComplete && time.Since(started) >= bm.timeout {
+			//	log.WithFields(log.Fields{
+			//		"serial": bm.String(),
+			//		"error":  err.Error(),
+			//	}).Error("Read timeout")
+			//	mainTicker.Stop()
+			//	bm.waiter.Done()
+			//	bm.Exit()
+			//	return
+			//}
 			if initializationComplete && read == 0 {
 				missing += 1
 				if missing > timeoutLoops {
@@ -445,16 +445,15 @@ func (bm *BM1387Controller) readLoop() {
 
 func (bm *BM1387Controller) writeLoop() {
 	defer bm.loopRecover("write")
+	var generated *generators.Generated
+	var generatorChan = bm.GetGenerator()
 	var task = stratum.NewTask(BM1387MidstateCount, true)
 	var work *stratum.Work
 	var workChan = bm.WorkChannel()
-	var extraNonce2 utils.Nonce64
 	var ntime utils.NTime
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
-	var headerGenerator = generators.NewHeaderFields(int(time.Second / bm.fullscanDuration))
 	var mainTicker = time.NewTicker(bm.fullscanDuration)
-	var reseedTicker = time.NewTicker(5 * time.Minute)
 	var diff big.Int
 	var nextPos uint32
 	var written int
@@ -462,23 +461,23 @@ func (bm *BM1387Controller) writeLoop() {
 		select {
 		case <-bm.quit:
 			mainTicker.Stop()
-			reseedTicker.Stop()
 			bm.waiter.Done()
 			return
-		case <-reseedTicker.C:
-			headerGenerator.Reseed()
 		case work = <-workChan:
 			ntime = work.Ntime
-			headerGenerator.Reset(work.ExtraNonceSource, work.Ntime, work.VersionsSource, work.NTimeSpace)
 			bm.currentJobId = work.JobId
 			bm.submitChan = work.Pool.SubmitChan
 			bm.poolVersion = work.Version
 			bm.poolVersionRolling = work.VersionRolling
 			(&diff).SetInt64(int64(work.Difficulty))
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
-			extraNonce2, ntime, versionMasks = headerGenerator.Next()
-			work.SetExtraNonce2(extraNonce2)
-			work.SetNtime(ntime)
+			generated = <-generatorChan
+			work.SetExtraNonce2(generated.ExtraNonce2)
+			work.SetNtime(utils.NTime(int64(ntime) + int64(generated.NTime)))
+			versionMasks[0] = generated.Version0
+			versionMasks[1] = generated.Version1
+			versionMasks[2] = generated.Version2
+			versionMasks[3] = generated.Version3
 			if bm.initialized {
 				task.Update(work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
@@ -495,7 +494,6 @@ func (bm *BM1387Controller) writeLoop() {
 					"error":  err.Error(),
 				}).Error("Task marshalling error")
 				mainTicker.Stop()
-				reseedTicker.Stop()
 				bm.waiter.Done()
 				go bm.Exit()
 				return
@@ -506,7 +504,6 @@ func (bm *BM1387Controller) writeLoop() {
 						"error":  err.Error(),
 					}).Error("Write error")
 					mainTicker.Stop()
-					reseedTicker.Stop()
 					bm.waiter.Done()
 					bm.Exit()
 					return
@@ -517,7 +514,6 @@ func (bm *BM1387Controller) writeLoop() {
 						"error":  err.Error(),
 					}).Error("Write incomplete")
 					mainTicker.Stop()
-					reseedTicker.Stop()
 					bm.waiter.Done()
 					bm.Exit()
 					return
@@ -533,10 +529,14 @@ func (bm *BM1387Controller) writeLoop() {
 				nextPos = 0
 			}
 			if bm.initialized {
-				extraNonce2, ntime, versionMasks = headerGenerator.Next()
 				currentTask = bm.tasks[nextPos]
-				work.SetExtraNonce2(extraNonce2)
-				work.SetNtime(ntime)
+				generated = <-generatorChan
+				work.SetExtraNonce2(generated.ExtraNonce2)
+				work.SetNtime(utils.NTime(int64(ntime) + int64(generated.NTime)))
+				versionMasks[0] = generated.Version0
+				versionMasks[1] = generated.Version1
+				versionMasks[2] = generated.Version2
+				versionMasks[3] = generated.Version3
 				task.Update(work, versionMasks[:])
 				currentTask.Update(task)
 			}

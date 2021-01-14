@@ -6,31 +6,21 @@ import (
 )
 
 type NTime struct {
-	maxOffset  int
-	halfOffset int
-	backtrack  bool
-	center     utils.NTime
-	rng        *rand.Rand
-	space      *NTimeSpace
+	backtrack bool
+	rng       *rand.Rand
+	space     *NTimeSpace
 }
 
 func NewNtime() *NTime {
 	n := &NTime{
-		maxOffset:  MaxNTimeOffset,
-		halfOffset: MaxNTimeOffset / 2,
-		center:     0,
-		rng:        rand.New(rand.NewSource(utils.RandomInt64())),
+		rng:   rand.New(rand.NewSource(utils.RandomInt64())),
+		space: NewNTimeSpace(),
 	}
 	return n
 }
 
-func (n *NTime) Next() utils.NTime {
-	return n.center + utils.NTime(n.space.offsets[n.rng.Intn(n.space.count)])
-}
-
-func (n *NTime) Reset(center utils.NTime, space *NTimeSpace) {
-	n.center = center
-	n.space = space
+func (n *NTime) Next() int {
+	return n.space.offsets[n.rng.Intn(n.space.count)]
 }
 
 func (n *NTime) Reseed() {

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/fernandosanchezjr/goasicminer/generators/ntime"
-	uint642 "github.com/fernandosanchezjr/goasicminer/generators/uint64"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"math/big"
@@ -33,8 +31,6 @@ type Work struct {
 	plainHeader        [80]byte
 	headerBuf          *bytes.Buffer
 	VersionsSource     *utils.VersionSource
-	NTimeSpace         *ntime.NTimeSpace
-	ExtraNonceSource   *uint642.Uint64
 	ready              bool
 }
 

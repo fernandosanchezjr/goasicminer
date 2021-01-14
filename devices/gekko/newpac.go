@@ -23,6 +23,6 @@ func (np *NewPac) NewController(
 ) base.IController {
 	return NewBM1387Controller(
 		np.IDriver.NewController(config, context, np, device, serialNumber),
-		100, 700, 550, 2, 1500*time.Millisecond,
+		100, 700, 550, 2, 2*time.Second,
 	)
 }

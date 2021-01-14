@@ -3,8 +3,8 @@ package base
 import (
 	"errors"
 	"fmt"
+	"github.com/fernandosanchezjr/goasicminer/generators"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
-	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
 )
@@ -24,16 +24,18 @@ type IController interface {
 	Write(data []byte) (int, error)
 	AllocateReadBuffer() ([]byte, error)
 	Read(data []byte) (int, error)
-	SetHashRate(hashRate utils.HashRate)
+	SetGenerator(generator chan *generators.Generated)
+	GetGenerator() chan *generators.Generated
 }
 
 type Controller struct {
-	device       *ftdi.Device
-	driver       IDriver
-	serialNumber string
-	workChan     stratum.PoolWorkChan
-	context      *Context
-	open         bool
+	device        *ftdi.Device
+	driver        IDriver
+	serialNumber  string
+	workChan      stratum.PoolWorkChan
+	context       *Context
+	open          bool
+	generatorChan chan *generators.Generated
 }
 
 func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
@@ -140,6 +142,10 @@ func (c *Controller) Read(data []byte) (int, error) {
 	return c.device.Read(data)
 }
 
-func (c *Controller) SetHashRate(hashRate utils.HashRate) {
-	c.context.SetHashRate(c.serialNumber, hashRate)
+func (c *Controller) SetGenerator(generator chan *generators.Generated) {
+	c.generatorChan = generator
+}
+
+func (c *Controller) GetGenerator() chan *generators.Generated {
+	return c.generatorChan
 }

@@ -14,6 +14,7 @@ type NTimeSpace struct {
 func NewNTimeSpace() *NTimeSpace {
 	var ret = &NTimeSpace{}
 	ret.offsets = make([]int, MaxNTimeOffset)
+	ret.count = MaxNTimeOffset
 	for i := 0; i < MaxNTimeOffset; i++ {
 		ret.offsets[i] = i - HalfNTimeOffset
 	}

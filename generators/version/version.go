@@ -26,7 +26,9 @@ func (v *Version) Next() [4]utils.Version {
 }
 
 func (v *Version) Reset(versionSource *utils.VersionSource) {
-	v.versionSource = versionSource
+	if v.versionSource == nil || v.versionSource.Id != versionSource.Id {
+		v.versionSource = versionSource
+	}
 }
 
 func (v *Version) Reseed() {

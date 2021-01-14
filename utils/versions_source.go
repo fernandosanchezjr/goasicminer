@@ -17,6 +17,7 @@ type VersionSource struct {
 	maxVersionBits int
 	bitCount       int
 	RolledVersions []Version
+	versionCount   int
 	pos            int
 }
 
@@ -55,16 +56,16 @@ func (vs *VersionSource) init() {
 			}
 		}
 	}
+	vs.versionCount = len(vs.RolledVersions)
 }
 
 func (vs *VersionSource) Retrieve(dest []Version) {
 	destCount := len(dest)
-	rolledCount := len(vs.RolledVersions)
 	if destCount == 0 {
 		return
 	}
 	for i := 0; i < destCount; i++ {
-		if vs.pos >= rolledCount {
+		if vs.pos >= vs.versionCount {
 			vs.pos = 0
 		}
 		dest[i] = vs.RolledVersions[vs.pos]
@@ -73,9 +74,8 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 }
 
 func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
-	versionCount := len(vs.RolledVersions)
 	for pos := range dest {
-		dest[pos] = vs.RolledVersions[rng.Intn(versionCount)]
+		dest[pos] = vs.RolledVersions[rng.Intn(vs.versionCount)]
 	}
 }
 
