@@ -24,9 +24,8 @@ type VersionSource struct {
 func NewVersionSource(version Version, mask Version) *VersionSource {
 	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &VersionSource{
-		Id:      atomic.AddUint64(&versionId, 1),
-		Version: version, Mask: mask, bitCount: bitCount, minVersionBits: 1,
-		maxVersionBits: bitCount - 1}
+		Id: atomic.AddUint64(&versionId, 1), Version: version, Mask: mask, bitCount: bitCount,
+		minVersionBits: 1, maxVersionBits: bitCount - 1}
 	vs.init()
 	return vs
 }

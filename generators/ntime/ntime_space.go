@@ -2,8 +2,8 @@ package ntime
 
 import "math/rand"
 
-const MaxNTimeOffset = 1024
-const HalfNTimeOffset = 512
+const MaxNTimeOffset = 256
+const HalfNTimeOffset = 0
 
 type NTimeSpace struct {
 	offsets []int

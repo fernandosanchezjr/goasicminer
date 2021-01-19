@@ -349,7 +349,6 @@ func (bm *BM1387Controller) readLoop() {
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
-	//var started time.Time
 	var initializationComplete bool
 	rb := protocol.NewResponseBlock()
 	mainTicker := time.NewTicker(bm.fullscanDuration)
@@ -380,16 +379,6 @@ func (bm *BM1387Controller) readLoop() {
 				bm.Exit()
 				return
 			}
-			//if initializationComplete && time.Since(started) >= bm.timeout {
-			//	log.WithFields(log.Fields{
-			//		"serial": bm.String(),
-			//		"error":  err.Error(),
-			//	}).Error("Read timeout")
-			//	mainTicker.Stop()
-			//	bm.waiter.Done()
-			//	bm.Exit()
-			//	return
-			//}
 			if initializationComplete && read == 0 {
 				missing += 1
 				if missing > timeoutLoops {
@@ -403,9 +392,8 @@ func (bm *BM1387Controller) readLoop() {
 					return
 				}
 				continue
-			} else {
-				missing = 0
 			}
+			missing = 0
 			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
 				log.WithFields(log.Fields{
 					"serial": bm.String(),
@@ -416,9 +404,9 @@ func (bm *BM1387Controller) readLoop() {
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {
-					initializationComplete = true
 					continue
 				}
+				initializationComplete = true
 				midstate = taskResponse.JobId % BM1387MidstateCount
 				if midstate != 0 {
 					index = taskResponse.JobId - midstate
@@ -495,7 +483,7 @@ func (bm *BM1387Controller) writeLoop() {
 				}).Error("Task marshalling error")
 				mainTicker.Stop()
 				bm.waiter.Done()
-				go bm.Exit()
+				bm.Exit()
 				return
 			} else {
 				if written, err = bm.Write(data); err != nil {

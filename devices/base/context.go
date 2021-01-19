@@ -78,8 +78,11 @@ func (c *Context) GetControllers(driver IDriver) []IController {
 func (c *Context) UpdateWork(work *stratum.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	c.generator.Reset(work.VersionsSource)
-	c.lastVersionId = work.VersionsSource.Id
+	if c.lastVersionId != work.VersionsSource.Id {
+		c.generator.UpdateVersion(work.VersionsSource)
+		c.lastVersionId = work.VersionsSource.Id
+	}
+	c.generator.UpdateWork()
 	for _, ct := range c.controllers {
 		ct.UpdateWork(work.Clone())
 	}

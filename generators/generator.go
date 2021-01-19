@@ -12,18 +12,18 @@ import (
 
 const (
 	MaxExtraNonceReuse = 16
-	MinExtraNonceReuse = 4
+	MinExtraNonceReuse = 8
 	MaxNTimeReuse      = 16
-	MinNTimeReuse      = 4
+	MinNTimeReuse      = 8
 	MaxVersionReuse    = 16
-	MinVersionReuse    = 4
+	MinVersionReuse    = 8
 	BufferSize         = 64
-	GeneratedCacheSize = 1024
-	Iterations         = 512
+	GeneratedCacheSize = 2048
+	Iterations         = 128
 )
 
 type HeaderFields struct {
-	extraNonce2Source        *uint642.Uint64
+	extraNonce               *uint642.Uint64
 	nTime                    *ntime.NTime
 	version                  *version.Version
 	rng                      *rand.Rand
@@ -43,24 +43,26 @@ type HeaderFields struct {
 	started                  bool
 	quitChan                 chan struct{}
 	versionChan              chan *utils.VersionSource
-	waiter                   sync.WaitGroup
+	workChan                 chan int
 	generatedChan            chan *Generated
+	waiter                   sync.WaitGroup
 }
 
 func NewHeaderFields() *HeaderFields {
 	var hf = &HeaderFields{
-		extraNonce2Source:     uint642.NewUint64Generator(),
+		extraNonce:            uint642.NewUint64Generator(),
 		nTime:                 ntime.NewNtime(),
 		version:               version.NewVersion(),
 		strategies:            GeneratorStrategies(),
 		rng:                   rand.New(rand.NewSource(utils.RandomInt64())),
 		quitChan:              make(chan struct{}),
 		versionChan:           make(chan *utils.VersionSource),
+		workChan:              make(chan int),
 		generatedChan:         make(chan *Generated, BufferSize),
 		maxStrategyIterations: Iterations,
 	}
-	hf.Shuffle()
 	hf.setMaxReuse()
+	hf.Shuffle()
 	hf.waiter.Add(1)
 	go hf.generatorLoop()
 	return hf
@@ -70,29 +72,39 @@ func (hf *HeaderFields) strategiesShuffler(i, j int) {
 	hf.strategies[i], hf.strategies[j] = hf.strategies[j], hf.strategies[i]
 }
 
-func (hf *HeaderFields) setMaxReuse() {
-	hf.maxExtraNonceReuse = MinExtraNonceReuse + hf.rng.Intn(MaxExtraNonceReuse-MinExtraNonceReuse)
-	hf.maxNtimeReuse = MinNTimeReuse + hf.rng.Intn(MaxNTimeReuse-MinNTimeReuse)
-	hf.maxVersionReuse = MinVersionReuse + hf.rng.Intn(MaxVersionReuse-MinVersionReuse)
+func (hf *HeaderFields) IntN(min, max int) int {
+	if min == max {
+		return min
+	}
+	return min + hf.rng.Intn(max-min)
 }
 
-func (hf *HeaderFields) Reset(
+func (hf *HeaderFields) setMaxReuse() {
+	hf.maxExtraNonceReuse = hf.IntN(MinExtraNonceReuse, MaxExtraNonceReuse)
+	hf.maxNtimeReuse = hf.IntN(MinNTimeReuse, MaxNTimeReuse)
+	hf.maxVersionReuse = hf.IntN(MinVersionReuse, MaxVersionReuse)
+}
+
+func (hf *HeaderFields) UpdateVersion(
 	versionSource *utils.VersionSource,
 ) {
 	hf.versionChan <- versionSource
 }
 
+func (hf *HeaderFields) UpdateWork() {
+	hf.workChan <- 0
+}
+
 func (hf *HeaderFields) Reseed() {
 	hf.rng.Seed(utils.RandomInt64())
-	if hf.extraNonce2Source != nil {
-		hf.extraNonce2Source.Reseed()
-	}
+	hf.extraNonce.Reseed()
 	hf.nTime.Reseed()
 	hf.version.Reseed()
 }
 
 func (hf *HeaderFields) Shuffle() {
-	hf.extraNonce2Source.Shuffle()
+	hf.rng.Shuffle(len(hf.strategies), hf.strategiesShuffler)
+	hf.extraNonce.Shuffle()
 	hf.nTime.Shuffle()
 	hf.version.Shuffle()
 }
@@ -100,7 +112,7 @@ func (hf *HeaderFields) Shuffle() {
 func (hf *HeaderFields) nextExtraNonce2(strategy Strategy) utils.Nonce64 {
 	if strategy == Jump || hf.extraNonceGeneratedCount == 0 || hf.extraNonceGeneratedCount >= hf.maxExtraNonceReuse {
 		hf.extraNonceGeneratedCount = 0
-		hf.lastExtraNonce = utils.Nonce64(hf.extraNonce2Source.Next())
+		hf.lastExtraNonce = utils.Nonce64(hf.extraNonce.Next())
 	} else {
 		hf.extraNonceGeneratedCount += 1
 	}
@@ -129,14 +141,13 @@ func (hf *HeaderFields) nextVersion(strategy Strategy) [4]utils.Version {
 
 func (hf *HeaderFields) Next(generated *Generated) {
 	if hf.strategyIterations >= hf.maxStrategyIterations {
-		hf.setMaxReuse()
-		hf.Shuffle()
 		hf.strategyIterations = 0
 		hf.strategyPos += 1
 	}
 	if hf.strategyPos >= len(hf.strategies) {
 		hf.strategyPos = 0
-		hf.rng.Shuffle(len(hf.strategies), hf.strategiesShuffler)
+		hf.setMaxReuse()
+		hf.Shuffle()
 	}
 	var strategy = hf.strategies[hf.strategyPos]
 	generated.ExtraNonce2 = hf.nextExtraNonce2(strategy[0])
@@ -150,7 +161,7 @@ func (hf *HeaderFields) Next(generated *Generated) {
 }
 
 func (hf *HeaderFields) generatorLoop() {
-	reseedTicker := time.NewTicker(1 * time.Minute)
+	reseedTicker := time.NewTicker(time.Minute)
 	var versionSource *utils.VersionSource
 	var generatedCache = make([]*Generated, GeneratedCacheSize)
 	var currentPos, pending, i int
@@ -163,8 +174,9 @@ func (hf *HeaderFields) generatorLoop() {
 			hf.waiter.Done()
 			return
 		case versionSource = <-hf.versionChan:
-			hf.extraNonce2Source.Reset()
 			hf.version.Reset(versionSource)
+		case <-hf.workChan:
+			hf.extraNonce.Reset()
 		case <-reseedTicker.C:
 			hf.Reseed()
 		default:

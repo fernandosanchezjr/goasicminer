@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 )
 
-const MaxBitsFlipped = 8
-const MaxBitFlipperCount = 16
+const MaxBitsFlipped = 16
+const MaxBitFlipperCount = 4
 
 var id uint64
 
