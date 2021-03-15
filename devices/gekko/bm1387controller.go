@@ -558,6 +558,7 @@ func (bm *BM1387Controller) verifyLoop() {
 			if !poolMatch {
 				continue
 			}
+			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
 			if bm.poolVersionRolling {
 				submitVersion = verifyTask.Version & ^bm.poolVersion
 			} else {

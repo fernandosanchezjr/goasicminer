@@ -87,3 +87,7 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 		ct.UpdateWork(work.Clone())
 	}
 }
+
+func (c *Context) ExtraNonceFound(extraNonce utils.Nonce64) {
+	c.generator.ExtraNonceFound(extraNonce)
+}

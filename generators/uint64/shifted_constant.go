@@ -61,17 +61,3 @@ func (c *ShiftedConstant) Reseed() {
 	c.seeded = true
 	c.rng.Seed(utils.RandomInt64())
 }
-
-func (c *ShiftedConstant) Clone() Generator64 {
-	return &ShiftedConstant{
-		id:       c.id,
-		maskByte: c.maskByte,
-		value:    c.value,
-		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
-		seeded:   true,
-	}
-}
-
-func (c *ShiftedConstant) Id() uint64 {
-	return c.id
-}

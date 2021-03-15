@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/generators"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
 )
@@ -26,6 +27,7 @@ type IController interface {
 	Read(data []byte) (int, error)
 	SetGenerator(generator chan *generators.Generated)
 	GetGenerator() chan *generators.Generated
+	ExtraNonceFound(extraNonce utils.Nonce64)
 }
 
 type Controller struct {
@@ -148,4 +150,8 @@ func (c *Controller) SetGenerator(generator chan *generators.Generated) {
 
 func (c *Controller) GetGenerator() chan *generators.Generated {
 	return c.generatorChan
+}
+
+func (c *Controller) ExtraNonceFound(extraNonce utils.Nonce64) {
+	c.context.ExtraNonceFound(extraNonce)
 }

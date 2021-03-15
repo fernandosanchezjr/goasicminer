@@ -19,13 +19,14 @@ type VersionSource struct {
 	RolledVersions []Version
 	versionCount   int
 	pos            int
+	usedVersions   map[Version]bool
 }
 
 func NewVersionSource(version Version, mask Version) *VersionSource {
 	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &VersionSource{
 		Id: atomic.AddUint64(&versionId, 1), Version: version, Mask: mask, bitCount: bitCount,
-		minVersionBits: 1, maxVersionBits: bitCount - 1}
+		minVersionBits: 1, maxVersionBits: bitCount, usedVersions: map[Version]bool{}}
 	vs.init()
 	return vs
 }
@@ -73,32 +74,21 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 }
 
 func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
+	var version Version
+	var found bool
 	for pos := range dest {
-		dest[pos] = vs.RolledVersions[rng.Intn(vs.versionCount)]
-	}
-}
-
-func (vs *VersionSource) Clone(fraction float64) *VersionSource {
-	ret := &VersionSource{
-		Id:             atomic.AddUint64(&versionId, 1),
-		Version:        vs.Version,
-		Mask:           vs.Mask,
-		minVersionBits: vs.minVersionBits,
-		maxVersionBits: vs.maxVersionBits,
-		bitCount:       vs.bitCount,
-		pos:            0,
-	}
-	var versionCount = len(vs.RolledVersions)
-	var fractionCount = int(float64(versionCount) * fraction)
-	ret.RolledVersions = make([]Version, fractionCount)
-	for i := 0; i < fractionCount; i++ {
-		if vs.pos >= versionCount {
-			vs.pos = 0
+		for {
+			version = vs.RolledVersions[rng.Intn(vs.versionCount)]
+			if _, found = vs.usedVersions[version]; !found {
+				vs.usedVersions[version] = true
+				dest[pos] = version
+				break
+			}
+			if vs.versionCount == len(vs.usedVersions) {
+				vs.Reset()
+			}
 		}
-		ret.RolledVersions[i] = vs.RolledVersions[vs.pos]
-		vs.pos += 1
 	}
-	return ret
 }
 
 func (vs *VersionSource) Shuffle(rng *rand.Rand) {
@@ -107,6 +97,10 @@ func (vs *VersionSource) Shuffle(rng *rand.Rand) {
 
 func (vs *VersionSource) shuffler(i, j int) {
 	vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
+}
+
+func (vs *VersionSource) Reset() {
+	vs.usedVersions = map[Version]bool{}
 }
 
 func (vs *VersionSource) ResetPos() {

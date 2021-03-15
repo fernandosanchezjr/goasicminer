@@ -51,7 +51,6 @@ func (r *RandomOrMask) Next(prevState uint64) uint64 {
 	}
 	r.seeded = false
 	r.ShuffleMask()
-	//return r.rng.Uint64() | bits.RotateLeft64(r.mask, r.rng.Intn(64))
 	return prevState | bits.RotateLeft64(r.mask, r.rng.Intn(64))
 }
 
@@ -61,18 +60,4 @@ func (r *RandomOrMask) Reseed() {
 	}
 	r.seeded = true
 	r.rng.Seed(utils.RandomInt64())
-}
-
-func (r *RandomOrMask) Clone() Generator64 {
-	return &RandomOrMask{
-		id:       r.id,
-		maskByte: r.maskByte,
-		mask:     r.mask,
-		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
-		seeded:   true,
-	}
-}
-
-func (r *RandomOrMask) Id() uint64 {
-	return r.id
 }

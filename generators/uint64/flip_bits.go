@@ -59,17 +59,3 @@ func (fbo *FlipBits) Reseed() {
 func (fbp *FlipBitsPositions) shuffler(i, j int) {
 	fbp[i], fbp[j] = fbp[j], fbp[i]
 }
-
-func (fbo *FlipBits) Clone() Generator64 {
-	return &FlipBits{
-		id:     fbo.id,
-		bits:   fbo.bits,
-		mask:   fbo.mask,
-		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
-		seeded: true,
-	}
-}
-
-func (fbo *FlipBits) Id() uint64 {
-	return fbo.id
-}

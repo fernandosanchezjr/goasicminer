@@ -45,7 +45,7 @@ func NewConnection(address string, replyChan chan *protocol.Reply) (*Connection,
 		var conn *net.TCPConn
 		var ok bool
 		dialer := net.Dialer{Timeout: 1 * time.Second}
-		if rawConn, err = dialer.Dial("tcp", fmt.Sprintf("%s:%s", addr, port)); err != nil {
+		if rawConn, err = dialer.Dial("tcp", fmt.Sprintf("[%s]:%s", addr, port)); err != nil {
 			return nil, err
 		}
 		if conn, ok = rawConn.(*net.TCPConn); !ok {

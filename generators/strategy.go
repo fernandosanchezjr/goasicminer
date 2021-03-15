@@ -20,8 +20,8 @@ func (s Strategy) String() string {
 
 func GeneratorStrategies() [][]Strategy {
 	var result [][]Strategy
-	for i := 1; i < 8; i++ {
-		result = append(result, []Strategy{Strategy((i & 4) >> 2), Strategy((i & 2) >> 1), Strategy(i & 1)})
+	for i := 1; i < 3; i++ {
+		result = append(result, []Strategy{Strategy((i & 2) >> 1), Strategy(i & 1)})
 	}
 	return result
 }

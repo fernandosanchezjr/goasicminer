@@ -40,3 +40,9 @@ func (v *Version) Shuffle() {
 		v.versionSource.Shuffle(v.rng)
 	}
 }
+
+func (v *Version) ResetUsedVersions() {
+	if v.versionSource != nil {
+		v.versionSource.Reset()
+	}
+}
