@@ -13,13 +13,13 @@ import (
 const (
 	MaxExtraNonceReuse = 1024
 	MinExtraNonceReuse = 1024
-	MaxVersionReuse    = 32
-	MinVersionReuse    = 32
-	MaxNTimeReuse      = 32
-	MinNTimeReuse      = 32
+	MaxVersionReuse    = 8
+	MinVersionReuse    = 8
+	MaxNTimeReuse      = 8
+	MinNTimeReuse      = 8
 	BufferSize         = 32
 	GeneratedCacheSize = 2048
-	Iterations         = 1024
+	Iterations         = 64
 )
 
 type HeaderFields struct {
@@ -132,6 +132,9 @@ func (hf *HeaderFields) nextVersion(strategy Strategy) [4]utils.Version {
 	if strategy == Jump || hf.versionGeneratedCount == 0 || hf.versionGeneratedCount >= hf.maxVersionReuse {
 		hf.versionGeneratedCount = 0
 		hf.lastVersion = hf.version.Next()
+		if hf.versionGeneratedCount == 0 && strategy == Jump {
+			hf.nTime.ResetUsedNtimes()
+		}
 	}
 	hf.versionGeneratedCount += 1
 	return hf.lastVersion
@@ -141,6 +144,9 @@ func (hf *HeaderFields) nextNTime(strategy Strategy) int {
 	if strategy == Jump || hf.nTimeGeneratedCount == 0 || hf.nTimeGeneratedCount >= hf.maxNtimeReuse {
 		hf.nTimeGeneratedCount = 0
 		hf.lastNTime = hf.nTime.Next()
+		if hf.nTimeGeneratedCount == 0 && strategy == Jump {
+			hf.version.ResetUsedVersions()
+		}
 	}
 	hf.nTimeGeneratedCount += 1
 	return hf.lastNTime

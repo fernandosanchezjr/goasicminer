@@ -26,7 +26,7 @@ func NewVersionSource(version Version, mask Version) *VersionSource {
 	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &VersionSource{
 		Id: atomic.AddUint64(&versionId, 1), Version: version, Mask: mask, bitCount: bitCount,
-		minVersionBits: 1, maxVersionBits: bitCount, usedVersions: map[Version]bool{}}
+		minVersionBits: 1, maxVersionBits: 4, usedVersions: map[Version]bool{}}
 	vs.init()
 	return vs
 }
