@@ -461,7 +461,7 @@ func (bm *BM1387Controller) writeLoop() {
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
 			generated = <-generatorChan
 			work.SetExtraNonce2(generated.ExtraNonce2)
-			work.SetNtime(utils.NTime(int64(ntime) + int64(generated.NTime)))
+			work.SetNtime((ntime & 0xffffff00) | generated.NTime)
 			versionMasks[0] = generated.Version0
 			versionMasks[1] = generated.Version1
 			versionMasks[2] = generated.Version2
@@ -552,13 +552,13 @@ func (bm *BM1387Controller) verifyLoop() {
 			if verifyTask.JobId != bm.currentJobId {
 				continue
 			}
+			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
 			hash := verifyTask.CalculateHash()
 			utils.HashToBig(hash, &hashBig)
 			poolMatch = hashBig.Cmp(bm.currentDiff) <= 0
 			if !poolMatch {
 				continue
 			}
-			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
 			if bm.poolVersionRolling {
 				submitVersion = verifyTask.Version & ^bm.poolVersion
 			} else {

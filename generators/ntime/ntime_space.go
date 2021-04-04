@@ -1,22 +1,24 @@
 package ntime
 
-import "math/rand"
+import (
+	"github.com/fernandosanchezjr/goasicminer/utils"
+	"math/rand"
+)
 
-const MaxNTimeOffset = 300
-const HalfNTimeOffset = 0
+const MaxNTimeOffset = 255
 
 type NTimeSpace struct {
-	offsets []int
+	offsets []utils.NTime
 	count   int
 	pos     int
 }
 
 func NewNTimeSpace() *NTimeSpace {
 	var ret = &NTimeSpace{}
-	ret.offsets = make([]int, MaxNTimeOffset)
+	ret.offsets = make([]utils.NTime, MaxNTimeOffset)
 	ret.count = MaxNTimeOffset
 	for i := 0; i < MaxNTimeOffset; i++ {
-		ret.offsets[i] = i - HalfNTimeOffset
+		ret.offsets[i] = utils.NTime(i)
 	}
 	return ret
 }
@@ -33,7 +35,7 @@ func (n *NTimeSpace) Clone(fraction float64) *NTimeSpace {
 	var ret = &NTimeSpace{}
 	var offsetCount = len(n.offsets)
 	var fractionCount = int(float64(offsetCount) * fraction)
-	ret.offsets = make([]int, fractionCount)
+	ret.offsets = make([]utils.NTime, fractionCount)
 	for i := 0; i < fractionCount; i++ {
 		if n.pos >= offsetCount {
 			n.pos = 0

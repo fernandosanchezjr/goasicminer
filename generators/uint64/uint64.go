@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 )
 
-const MaxBitsFlipped = 16
-const MaxBitFlipperCount = 4
+const MaxBitsFlipped = 8
+const MaxBitFlipperCount = 24
 
 var id uint64
 
@@ -17,6 +17,7 @@ type Uint64 struct {
 	generatorsCount   int
 	previousState     uint64
 	previousGenerated map[uint64]byte
+	ri                *utils.RandomIndex
 	pos               int
 }
 
@@ -35,19 +36,9 @@ func (u *Uint64) Add(generator ...utils.Generator64) {
 }
 
 func (u *Uint64) Next() uint64 {
-	if u.generatorsCount == 0 {
-		return 0
-	}
-	var nextState uint64
-	var found bool
-	for {
-		nextState = u.generators[u.rng.Intn(u.generatorsCount)].Next(u.previousState)
-		if _, found = u.previousGenerated[nextState]; !found {
-			u.previousState = nextState
-			u.previousGenerated[nextState] = 0
-			return nextState
-		}
-	}
+	var nextPos = u.ri.Next(u.rng)
+	u.previousState = u.generators[nextPos].Next(u.previousState)
+	return u.previousState
 }
 
 func (u *Uint64) Shuffle() {
@@ -59,7 +50,7 @@ func (u *Uint64) shuffler(i, j int) {
 }
 
 func (u *Uint64) Reset() {
-	u.previousGenerated = map[uint64]byte{}
+	u.ri.Reset()
 }
 
 func (u *Uint64) Reseed() {
@@ -77,6 +68,7 @@ func NewUint64Generator() *Uint64 {
 			u.Add(flipper)
 		}
 	}
+	var rl, rr = NewRotateLeft(), NewRotateRight()
 	var random = NewRandom()
 	for i := 1; i < 16; i++ {
 		var byteVal = byte(i)
@@ -86,9 +78,11 @@ func NewUint64Generator() *Uint64 {
 			NewRandomAndMask(byteVal),
 			NewRandomXorMask(byteVal),
 			NewRandomOrMask(byteVal),
+			rl, rr,
 		)
 	}
 	u.Shuffle()
+	u.ri = utils.NewRandomIndex(u.generatorsCount)
 	return u
 }
 

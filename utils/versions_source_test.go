@@ -12,7 +12,7 @@ func Test_VersionCombinations(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		vs.Retrieve(versionCount[:])
 		for _, v := range versionCount {
-			log.Printf("%08x", v)
+			log.Println(v)
 		}
 	}
 }

@@ -25,9 +25,10 @@ func (v *Version) Next() [4]utils.Version {
 	return v.versions
 }
 
-func (v *Version) Reset(versionSource *utils.VersionSource) {
+func (v *Version) Update(versionSource *utils.VersionSource) {
 	if v.versionSource == nil || v.versionSource.Id != versionSource.Id {
 		v.versionSource = versionSource
+		v.versionSource.Shuffle(v.rng)
 	}
 }
 
@@ -35,13 +36,7 @@ func (v *Version) Reseed() {
 	v.rng.Seed(utils.RandomInt64())
 }
 
-func (v *Version) Shuffle() {
-	if v.versionSource != nil {
-		v.versionSource.Shuffle(v.rng)
-	}
-}
-
-func (v *Version) ResetUsedVersions() {
+func (v *Version) Reset() {
 	if v.versionSource != nil {
 		v.versionSource.Reset()
 	}

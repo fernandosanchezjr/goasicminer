@@ -8,11 +8,12 @@ import (
 type FlipBitsPositions [64]int
 
 type FlipBits struct {
-	id     uint64
-	bits   int
-	mask   uint64
-	rng    *rand.Rand
-	seeded bool
+	id           uint64
+	bits         int
+	mask         uint64
+	rng          *rand.Rand
+	seeded       bool
+	bitPositions FlipBitsPositions
 }
 
 func NewFlipBits(bits int) *FlipBits {
@@ -22,23 +23,18 @@ func NewFlipBits(bits int) *FlipBits {
 		rng:    rand.New(rand.NewSource(utils.RandomInt64())),
 		seeded: false,
 	}
+	for i := 0; i < 64; i++ {
+		fb.bitPositions[i] = i
+	}
 	fb.ShuffleMask()
 	return fb
 }
 
 func (fbo *FlipBits) ShuffleMask() {
-	if fbo.bits == 1 {
-		fbo.mask = 1
-		return
-	}
-	var bitPositions FlipBitsPositions
-	for i := 0; i < 64; i++ {
-		bitPositions[i] = i
-	}
-	fbo.rng.Shuffle(64, (&bitPositions).shuffler)
+	fbo.rng.Shuffle(64, (&fbo.bitPositions).shuffler)
 	fbo.mask = 0
 	for i := 0; i < fbo.bits; i++ {
-		fbo.mask = fbo.mask | 1<<bitPositions[i]
+		fbo.mask = fbo.mask | 1<<fbo.bitPositions[i]
 	}
 }
 

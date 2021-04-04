@@ -19,14 +19,14 @@ type VersionSource struct {
 	RolledVersions []Version
 	versionCount   int
 	pos            int
-	usedVersions   map[Version]bool
+	rpl            *RandomIndex
 }
 
 func NewVersionSource(version Version, mask Version) *VersionSource {
 	bitCount := bits.OnesCount32(uint32(mask))
 	vs := &VersionSource{
 		Id: atomic.AddUint64(&versionId, 1), Version: version, Mask: mask, bitCount: bitCount,
-		minVersionBits: 1, maxVersionBits: 4, usedVersions: map[Version]bool{}}
+		minVersionBits: 1, maxVersionBits: bitCount}
 	vs.init()
 	return vs
 }
@@ -57,6 +57,7 @@ func (vs *VersionSource) init() {
 		}
 	}
 	vs.versionCount = len(vs.RolledVersions)
+	vs.rpl = NewRandomIndex(vs.versionCount)
 }
 
 func (vs *VersionSource) Retrieve(dest []Version) {
@@ -74,20 +75,10 @@ func (vs *VersionSource) Retrieve(dest []Version) {
 }
 
 func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
-	var version Version
-	var found bool
+	var nextPos int
 	for pos := range dest {
-		for {
-			version = vs.RolledVersions[rng.Intn(vs.versionCount)]
-			if _, found = vs.usedVersions[version]; !found {
-				vs.usedVersions[version] = true
-				dest[pos] = version
-				break
-			}
-			if vs.versionCount == len(vs.usedVersions) {
-				vs.Reset()
-			}
-		}
+		nextPos = vs.rpl.Next(rng)
+		dest[pos] = vs.RolledVersions[nextPos]
 	}
 }
 
@@ -99,14 +90,14 @@ func (vs *VersionSource) shuffler(i, j int) {
 	vs.RolledVersions[i], vs.RolledVersions[j] = vs.RolledVersions[j], vs.RolledVersions[i]
 }
 
-func (vs *VersionSource) Reset() {
-	vs.usedVersions = map[Version]bool{}
-}
-
 func (vs *VersionSource) ResetPos() {
 	vs.pos = 0
 }
 
 func (vs *VersionSource) Len() int {
 	return len(vs.RolledVersions)
+}
+
+func (vs *VersionSource) Reset() {
+	vs.rpl.Reset()
 }

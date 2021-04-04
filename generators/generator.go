@@ -12,12 +12,12 @@ import (
 
 const (
 	MaxExtraNonceReuse = 1024
-	MinExtraNonceReuse = 1024
-	MaxVersionReuse    = 8
-	MinVersionReuse    = 8
-	MaxNTimeReuse      = 8
-	MinNTimeReuse      = 8
-	BufferSize         = 32
+	MinExtraNonceReuse = 64
+	MaxVersionReuse    = 16
+	MinVersionReuse    = 2
+	MaxNTimeReuse      = 16
+	MinNTimeReuse      = 2
+	BufferSize         = 64
 	GeneratedCacheSize = 2048
 	Iterations         = 64
 )
@@ -34,14 +34,14 @@ type HeaderFields struct {
 	lastExtraNonce           utils.Nonce64
 	maxNtimeReuse            int
 	nTimeGeneratedCount      int
-	lastNTime                int
+	lastNTime                utils.NTime
 	maxVersionReuse          int
 	versionGeneratedCount    int
 	lastVersion              [4]utils.Version
 	strategyPos              int
 	strategyIterations       int
-	maxStrategyIterations    int
 	started                  bool
+	knownGenerated           map[GeneratedVersion]bool
 	quitChan                 chan struct{}
 	versionChan              chan *utils.VersionSource
 	workChan                 chan int
@@ -52,17 +52,17 @@ type HeaderFields struct {
 
 func NewHeaderFields() *HeaderFields {
 	var hf = &HeaderFields{
-		extraNonce:            uint642.NewUint64Generator(),
-		nTime:                 ntime.NewNtime(),
-		version:               version.NewVersion(),
-		strategies:            GeneratorStrategies(),
-		rng:                   rand.New(rand.NewSource(utils.RandomInt64())),
-		quitChan:              make(chan struct{}),
-		versionChan:           make(chan *utils.VersionSource),
-		workChan:              make(chan int),
-		generatedChan:         make(chan *Generated, BufferSize),
-		knownNonceChan:        make(chan utils.Nonce64, BufferSize),
-		maxStrategyIterations: Iterations,
+		extraNonce:     uint642.NewUint64Generator(),
+		nTime:          ntime.NewNtime(),
+		version:        version.NewVersion(),
+		strategies:     GeneratorStrategies(),
+		rng:            rand.New(rand.NewSource(utils.RandomInt64())),
+		knownGenerated: map[GeneratedVersion]bool{},
+		quitChan:       make(chan struct{}),
+		versionChan:    make(chan *utils.VersionSource),
+		workChan:       make(chan int),
+		generatedChan:  make(chan *Generated, BufferSize),
+		knownNonceChan: make(chan utils.Nonce64, BufferSize),
 	}
 	hf.strategiesCount = len(hf.strategies)
 	hf.setMaxReuse()
@@ -111,52 +111,51 @@ func (hf *HeaderFields) Reseed() {
 }
 
 func (hf *HeaderFields) Shuffle() {
-	hf.extraNonce.Shuffle()
-	hf.nTime.Shuffle()
-	hf.version.Shuffle()
 	hf.rng.Shuffle(len(hf.strategies), hf.strategiesShuffler)
 }
 
 func (hf *HeaderFields) nextExtraNonce2(strategy Strategy) utils.Nonce64 {
-	if strategy == Jump || hf.extraNonceGeneratedCount == 0 || hf.extraNonceGeneratedCount >= hf.maxExtraNonceReuse {
+	if hf.extraNonceGeneratedCount >= hf.maxExtraNonceReuse {
 		hf.extraNonceGeneratedCount = 0
+	}
+	if strategy == Jump || hf.extraNonceGeneratedCount == 0 {
 		hf.lastExtraNonce = utils.Nonce64(hf.extraNonce.Next())
-		hf.version.ResetUsedVersions()
-		hf.nTime.ResetUsedNtimes()
+		hf.version.Reset()
+		hf.nTime.Reset()
+		hf.knownGenerated = map[GeneratedVersion]bool{}
 	}
 	hf.extraNonceGeneratedCount += 1
 	return hf.lastExtraNonce
 }
 
 func (hf *HeaderFields) nextVersion(strategy Strategy) [4]utils.Version {
-	if strategy == Jump || hf.versionGeneratedCount == 0 || hf.versionGeneratedCount >= hf.maxVersionReuse {
+	if hf.versionGeneratedCount >= hf.maxVersionReuse {
 		hf.versionGeneratedCount = 0
-		hf.lastVersion = hf.version.Next()
-		if hf.versionGeneratedCount == 0 && strategy == Jump {
-			hf.nTime.ResetUsedNtimes()
-		}
 	}
-	hf.versionGeneratedCount += 1
+	if strategy == Jump || hf.versionGeneratedCount == 0 {
+		hf.lastVersion = hf.version.Next()
+	}
+	hf.versionGeneratedCount += 4
 	return hf.lastVersion
 }
 
-func (hf *HeaderFields) nextNTime(strategy Strategy) int {
-	if strategy == Jump || hf.nTimeGeneratedCount == 0 || hf.nTimeGeneratedCount >= hf.maxNtimeReuse {
+func (hf *HeaderFields) nextNTime(strategy Strategy) utils.NTime {
+	if hf.nTimeGeneratedCount >= hf.maxNtimeReuse {
 		hf.nTimeGeneratedCount = 0
+	}
+	if strategy == Jump || hf.nTimeGeneratedCount == 0 {
 		hf.lastNTime = hf.nTime.Next()
-		if hf.nTimeGeneratedCount == 0 && strategy == Jump {
-			hf.version.ResetUsedVersions()
-		}
 	}
 	hf.nTimeGeneratedCount += 1
 	return hf.lastNTime
 }
 
 func (hf *HeaderFields) Next(generated *Generated) {
-	if hf.strategyIterations >= hf.maxStrategyIterations {
+	var generatedHash0, generatedHash1, generatedHash2, generatedHash3 GeneratedVersion
+	var found0, found1, found2, found3 bool
+	if hf.strategyIterations >= Iterations {
 		hf.strategyIterations = 0
 		hf.strategyPos += 1
-		hf.setMaxReuse()
 	}
 	if hf.strategyPos >= hf.strategiesCount {
 		hf.strategyPos = 0
@@ -164,22 +163,38 @@ func (hf *HeaderFields) Next(generated *Generated) {
 	}
 	var strategy = hf.strategies[hf.strategyPos]
 	generated.ExtraNonce2 = hf.nextExtraNonce2(Reuse)
-	if strategy[0] == Reuse {
+	for {
 		hf.nextVersion(strategy[0])
 		generated.NTime = hf.nextNTime(strategy[1])
-	} else {
-		generated.NTime = hf.nextNTime(strategy[1])
-		hf.nextVersion(strategy[0])
+		generatedHash0.ExtraNonce2, generatedHash1.ExtraNonce2, generatedHash2.ExtraNonce2, generatedHash3.ExtraNonce2 =
+			generated.ExtraNonce2, generated.ExtraNonce2, generated.ExtraNonce2, generated.ExtraNonce2
+		generatedHash0.NTime, generatedHash1.NTime, generatedHash2.NTime, generatedHash3.NTime =
+			generated.NTime, generated.NTime, generated.NTime, generated.NTime
+		generatedHash0.Version, generatedHash1.Version, generatedHash2.Version, generatedHash3.Version =
+			hf.lastVersion[0], hf.lastVersion[1], hf.lastVersion[2], hf.lastVersion[3]
+		found0 = hf.knownGenerated[generatedHash0]
+		found1 = hf.knownGenerated[generatedHash1]
+		found2 = hf.knownGenerated[generatedHash2]
+		found3 = hf.knownGenerated[generatedHash3]
+		if !found0 && !found1 && !found2 && !found3 {
+			hf.knownGenerated[generatedHash0] = true
+			hf.knownGenerated[generatedHash1] = true
+			hf.knownGenerated[generatedHash2] = true
+			hf.knownGenerated[generatedHash3] = true
+			generated.Version0 = hf.lastVersion[0]
+			generated.Version1 = hf.lastVersion[1]
+			generated.Version2 = hf.lastVersion[2]
+			generated.Version3 = hf.lastVersion[3]
+			break
+		}
+		hf.strategyIterations += 1
+		hf.extraNonceGeneratedCount += 1
 	}
-	generated.Version0 = hf.lastVersion[0]
-	generated.Version1 = hf.lastVersion[1]
-	generated.Version2 = hf.lastVersion[2]
-	generated.Version3 = hf.lastVersion[3]
-	hf.strategyIterations += 1
 }
 
 func (hf *HeaderFields) generatorLoop() {
-	reseedTicker := time.NewTicker(2 * time.Minute)
+	var reuseTicker = time.NewTicker(3 * time.Second)
+	var reseedTicker = time.NewTicker(2 * time.Minute)
 	var versionSource *utils.VersionSource
 	var generatedCache = make([]*Generated, GeneratedCacheSize)
 	var currentPos, pending, i int
@@ -193,18 +208,16 @@ func (hf *HeaderFields) generatorLoop() {
 			hf.waiter.Done()
 			return
 		case versionSource = <-hf.versionChan:
-			hf.version.Reset(versionSource)
+			hf.version.Update(versionSource)
 		case <-hf.workChan:
 			hf.extraNonce.Reset()
+		case <-reuseTicker.C:
+			hf.setMaxReuse()
 		case <-reseedTicker.C:
 			hf.Reseed()
 		case knownNonce = <-hf.knownNonceChan:
 			if knownNonce == hf.lastExtraNonce {
 				hf.extraNonceGeneratedCount = MaxExtraNonceReuse
-				hf.versionGeneratedCount = MaxVersionReuse
-				hf.nTimeGeneratedCount = MaxNTimeReuse
-				hf.strategyIterations = 0
-				hf.strategyPos += 1
 			}
 		default:
 			if versionSource == nil {
