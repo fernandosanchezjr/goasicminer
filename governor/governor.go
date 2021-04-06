@@ -38,7 +38,7 @@ func NewGovernor(cfg *config.Config) *Governor {
 		workQuit: nil,
 		cron:     cron.New(),
 	}
-	governor.setupTimers()
+	//governor.setupTimers()
 	return governor
 }
 

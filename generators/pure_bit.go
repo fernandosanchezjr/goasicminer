@@ -1,57 +1,52 @@
 package generators
 
 import (
+	"github.com/fernandosanchezjr/goasicminer/generators/bitdirectory"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"math/rand"
 	"sync"
 	"time"
 )
 
+const MaxBitsManipulated = 96
+const MinBitsManipulated = 8
+
 type PureBit struct {
-	rng                *rand.Rand
-	extraNonce         utils.Nonce64
-	extraNonceReuse    int
-	maxExtraNonceReuse int
-	extraNonceBitCount int
-	extranonceRI       *utils.RandomIndex
-	versionMask        utils.Version
-	version            [4]utils.Version
-	versionBitCount    int
-	versionRI          [4]*utils.RandomIndex
-	nTime              utils.NTime
-	nTimeBitCount      int
-	nTimeRI            *utils.RandomIndex
-	knownNonces        map[utils.Nonce64]bool
-	knownGenerated     map[GeneratedVersion]bool
-	quitChan           chan struct{}
-	versionChan        chan *utils.VersionSource
-	workChan           chan int
-	generatedChan      chan *Generated
-	knownNonceChan     chan utils.Nonce64
-	waiter             sync.WaitGroup
+	rng             *rand.Rand
+	extraNonce      utils.Nonce64
+	bitsManipulated int
+	overviewRI      *utils.RandomIndex
+	manipulatedRI   *utils.RandomIndex
+	versionMask     utils.Version
+	version         [4]utils.Version
+	nTime           utils.NTime
+	knownNonces     map[utils.Nonce64]bool
+	knownGenerated  map[GeneratedVersion]bool
+	quitChan        chan struct{}
+	versionChan     chan *utils.VersionSource
+	workChan        chan int
+	generatedChan   chan *Generated
+	knownNonceChan  chan utils.Nonce64
+	waiter          sync.WaitGroup
 }
 
 func NewPureBit() *PureBit {
 	var pb = &PureBit{
-		rng:                rand.New(rand.NewSource(utils.RandomInt64())),
-		maxExtraNonceReuse: MinExtraNonceReuse,
-		extraNonceBitCount: 4,
-		extranonceRI:       utils.NewRandomIndex(64),
-		versionBitCount:    1,
-		nTimeRI:            utils.NewRandomIndex(8),
-		nTimeBitCount:      1,
-		knownNonces:        map[utils.Nonce64]bool{},
-		knownGenerated:     map[GeneratedVersion]bool{},
-		quitChan:           make(chan struct{}),
-		versionChan:        make(chan *utils.VersionSource),
-		workChan:           make(chan int),
-		generatedChan:      make(chan *Generated, BufferSize),
-		knownNonceChan:     make(chan utils.Nonce64, BufferSize),
+		rng:            rand.New(rand.NewSource(utils.RandomInt64())),
+		overviewRI:     utils.NewRandomIndex(200),
+		manipulatedRI:  utils.NewRandomIndex(MaxBitsManipulated - MinBitsManipulated),
+		knownNonces:    map[utils.Nonce64]bool{},
+		knownGenerated: map[GeneratedVersion]bool{},
+		quitChan:       make(chan struct{}),
+		versionChan:    make(chan *utils.VersionSource),
+		workChan:       make(chan int),
+		generatedChan:  make(chan *Generated, BufferSize),
+		knownNonceChan: make(chan utils.Nonce64, BufferSize),
 	}
-	for pos := range pb.versionRI {
-		pb.versionRI[pos] = utils.NewRandomIndex(32)
-	}
+	pb.bitsManipulated = pb.manipulatedRI.Next(pb.rng)
 	pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+	pb.overviewRI.Shuffle(pb.rng)
+	pb.manipulatedRI.Shuffle(pb.rng)
 	pb.waiter.Add(1)
 	go pb.generatorLoop()
 	return pb
@@ -80,60 +75,8 @@ func (pb *PureBit) ExtraNonceFound(extraNonce utils.Nonce64) {
 
 func (pb *PureBit) Reseed() {
 	pb.rng.Seed(utils.RandomInt64())
-}
-
-func (pb *PureBit) NextExtraNonce() {
-	var found bool
-	if pb.extraNonceReuse >= pb.maxExtraNonceReuse {
-		pb.extraNonceReuse = 0
-	}
-	if pb.extraNonceReuse == 0 {
-		for {
-			for i := 0; i < pb.extraNonceBitCount; i++ {
-				var nextBit = pb.extranonceRI.Next(pb.rng)
-				pb.extraNonce = pb.extraNonce ^ (1 << nextBit)
-			}
-			if _, found = pb.knownNonces[pb.extraNonce]; !found {
-				pb.knownNonces[pb.extraNonce] = true
-				break
-			}
-
-		}
-		pb.nTimeRI.Reset()
-		for _, ri := range pb.versionRI {
-			ri.Reset()
-		}
-	}
-	pb.extraNonceReuse += 1
-}
-
-func (pb *PureBit) NextNTime() {
-	for i := 0; i < pb.nTimeBitCount; i++ {
-		var nextBit = pb.nTimeRI.Next(pb.rng)
-		pb.nTime = pb.nTime ^ (1 << nextBit)
-	}
-}
-
-func (pb *PureBit) NextVersion() {
-	var tmpVersion utils.Version
-	var nextBit int
-	var added bool
-	var ri *utils.RandomIndex
-	for versionPos, version := range pb.version {
-		added = false
-		for added == false {
-			ri = pb.versionRI[versionPos]
-			for i := 0; i < pb.versionBitCount; i++ {
-				nextBit = ri.Next(pb.rng)
-				tmpVersion = version ^ (1 << nextBit)
-			}
-			if !pb.versionExists(versionPos, tmpVersion) {
-				pb.version[versionPos] = tmpVersion
-				added = true
-			}
-		}
-
-	}
+	pb.overviewRI.Shuffle(pb.rng)
+	pb.manipulatedRI.Shuffle(pb.rng)
 }
 
 func (pb *PureBit) versionExists(versionPos int, tmpVersion utils.Version) bool {
@@ -147,13 +90,33 @@ func (pb *PureBit) versionExists(versionPos int, tmpVersion utils.Version) bool 
 
 func (pb *PureBit) Next(generated *Generated) {
 	var generatedHash0, generatedHash1, generatedHash2, generatedHash3 GeneratedVersion
-	var found0, found1, found2, found3 bool
-	pb.NextExtraNonce()
-	generatedHash0.ExtraNonce2, generatedHash1.ExtraNonce2, generatedHash2.ExtraNonce2, generatedHash3.ExtraNonce2 =
-		pb.extraNonce, pb.extraNonce, pb.extraNonce, pb.extraNonce
+	var found, found0, found1, found2, found3 bool
+	var nextBit, entry, offset, pos int
+	var tmpVersion utils.Version
+	var tmpExtraNonce utils.Nonce64
 	for {
-		pb.NextNTime()
-		pb.NextVersion()
+		for i := 0; i < pb.bitsManipulated; i++ {
+			nextBit = pb.overviewRI.Next(pb.rng)
+			entry, offset = bitdirectory.Detail(nextBit)
+			switch {
+			case entry == 0:
+				pb.nTime = pb.nTime ^ (1 << offset)
+			case entry < 5:
+				pos = entry - 1
+				tmpVersion = pb.version[pos] ^ (1 << offset)
+				if !pb.versionExists(pos, tmpVersion) {
+					pb.version[pos] = tmpVersion
+				}
+			case entry == 5:
+				tmpExtraNonce = pb.extraNonce ^ (1 << offset)
+				if _, found = pb.knownNonces[tmpExtraNonce]; !found {
+					pb.extraNonce = tmpExtraNonce
+					pb.knownNonces[tmpExtraNonce] = true
+				}
+			}
+		}
+		generatedHash0.ExtraNonce2, generatedHash1.ExtraNonce2, generatedHash2.ExtraNonce2, generatedHash3.ExtraNonce2 =
+			pb.extraNonce, pb.extraNonce, pb.extraNonce, pb.extraNonce
 		generatedHash0.NTime, generatedHash1.NTime, generatedHash2.NTime, generatedHash3.NTime =
 			pb.nTime, pb.nTime, pb.nTime, pb.nTime
 		generatedHash0.Version, generatedHash1.Version, generatedHash2.Version, generatedHash3.Version =
@@ -173,14 +136,13 @@ func (pb *PureBit) Next(generated *Generated) {
 			generated.Version1 = pb.versionMask | pb.version[1]
 			generated.Version2 = pb.versionMask | pb.version[2]
 			generated.Version3 = pb.versionMask | pb.version[3]
-			break
+			return
 		}
-		pb.extraNonceReuse += 1
 	}
 }
 
 func (pb *PureBit) generatorLoop() {
-	var resetBitCountTicker = time.NewTicker(3 * time.Second)
+	var resetBitCountTicker = time.NewTicker(1 * time.Second)
 	var reseedTicker = time.NewTicker(2 * time.Minute)
 	var versionSource *utils.VersionSource
 	var generatedCache = make([]*Generated, GeneratedCacheSize)
@@ -197,21 +159,24 @@ func (pb *PureBit) generatorLoop() {
 		case versionSource = <-pb.versionChan:
 			pb.versionMask = versionSource.Version
 			var zeroPositions = versionSource.Mask.ZeroPositions()
-			for _, ri := range pb.versionRI {
-				ri.RemovePositions(zeroPositions...)
+			for entry := range pb.version {
+				for _, offset := range zeroPositions {
+					pb.overviewRI.RemovePositions(bitdirectory.Overview(entry+1, offset))
+				}
 			}
 		case <-pb.workChan:
-			pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
 			pb.knownNonces = map[utils.Nonce64]bool{}
 			pb.knownGenerated = map[GeneratedVersion]bool{}
-			pb.extranonceRI.Reset()
+			pb.overviewRI.Reset()
+			pb.manipulatedRI.Reset()
 		case <-reseedTicker.C:
 			pb.Reseed()
 		case <-resetBitCountTicker.C:
 			pb.ResetBitCounts()
 		case knownNonce = <-pb.knownNonceChan:
 			if knownNonce == pb.extraNonce {
-				pb.extraNonceReuse = MaxExtraNonceReuse
+				pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+				pb.overviewRI.Reset()
 			}
 		default:
 			if versionSource == nil {
@@ -236,10 +201,7 @@ func (pb *PureBit) generatorLoop() {
 }
 
 func (pb *PureBit) ResetBitCounts() {
-	pb.maxExtraNonceReuse = MinExtraNonceReuse + pb.rng.Intn(MaxExtraNonceReuse-MinExtraNonceReuse)
-	pb.extraNonceBitCount = 1 + pb.rng.Intn(24)
-	pb.versionBitCount = 1 + pb.rng.Intn(4)
-	pb.nTimeBitCount = 1 + pb.rng.Intn(3)
+	pb.bitsManipulated = MinBitsManipulated + pb.manipulatedRI.Next(pb.rng)
 }
 
 func (pb *PureBit) Close() {

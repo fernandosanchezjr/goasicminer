@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	MaxExtraNonceReuse = 1024
+	MaxExtraNonceReuse = 256
 	MinExtraNonceReuse = 64
 	MaxVersionReuse    = 16
-	MinVersionReuse    = 2
+	MinVersionReuse    = 8
 	MaxNTimeReuse      = 16
-	MinNTimeReuse      = 2
-	BufferSize         = 64
+	MinNTimeReuse      = 8
+	BufferSize         = 256
 	GeneratedCacheSize = 2048
 	Iterations         = 64
 )
@@ -123,6 +123,7 @@ func (hf *HeaderFields) nextExtraNonce2(strategy Strategy) utils.Nonce64 {
 		hf.version.Reset()
 		hf.nTime.Reset()
 		hf.knownGenerated = map[GeneratedVersion]bool{}
+		hf.setMaxReuse()
 	}
 	hf.extraNonceGeneratedCount += 1
 	return hf.lastExtraNonce
@@ -193,7 +194,6 @@ func (hf *HeaderFields) Next(generated *Generated) {
 }
 
 func (hf *HeaderFields) generatorLoop() {
-	var reuseTicker = time.NewTicker(3 * time.Second)
 	var reseedTicker = time.NewTicker(2 * time.Minute)
 	var versionSource *utils.VersionSource
 	var generatedCache = make([]*Generated, GeneratedCacheSize)
@@ -211,8 +211,6 @@ func (hf *HeaderFields) generatorLoop() {
 			hf.version.Update(versionSource)
 		case <-hf.workChan:
 			hf.extraNonce.Reset()
-		case <-reuseTicker.C:
-			hf.setMaxReuse()
 		case <-reseedTicker.C:
 			hf.Reseed()
 		case knownNonce = <-hf.knownNonceChan:

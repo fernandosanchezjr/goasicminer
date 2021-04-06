@@ -13,14 +13,14 @@ type Context struct {
 	controllers    map[string]IController
 	lastVersionId  uint64
 	rng            *rand.Rand
-	generator      *generators.HeaderFields
+	generator      *generators.PureBit
 }
 
 func NewContext() *Context {
 	c := &Context{
 		controllers: map[string]IController{},
 		rng:         rand.New(rand.NewSource(utils.RandomInt64())),
-		generator:   generators.NewHeaderFields(),
+		generator:   generators.NewPureBit(),
 	}
 	return c
 }

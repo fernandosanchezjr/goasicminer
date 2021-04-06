@@ -379,7 +379,14 @@ func (bm *BM1387Controller) readLoop() {
 				bm.Exit()
 				return
 			}
-			if initializationComplete && read == 0 {
+			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
+				log.WithFields(log.Fields{
+					"serial": bm.String(),
+					"error":  err,
+				}).Error("Error decoding response block")
+				continue
+			}
+			if initializationComplete && rb.Count == 0 {
 				missing += 1
 				if missing > timeoutLoops {
 					log.WithFields(log.Fields{
@@ -394,13 +401,6 @@ func (bm *BM1387Controller) readLoop() {
 				continue
 			}
 			missing = 0
-			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
-				log.WithFields(log.Fields{
-					"serial": bm.String(),
-					"error":  err,
-				}).Error("Error decoding response block")
-				continue
-			}
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {

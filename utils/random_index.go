@@ -64,3 +64,11 @@ func (rpl *RandomIndex) RemovePositions(positions ...int) {
 	rpl.MaxPos = rpl.Count - 1
 	rpl.Reset()
 }
+
+func (rpl *RandomIndex) Shuffle(rng *rand.Rand) {
+	rng.Shuffle(len(rpl.Indexes), rpl.shuffler)
+}
+
+func (rpl *RandomIndex) shuffler(i, j int) {
+	rpl.Indexes[i], rpl.Indexes[j] = rpl.Indexes[j], rpl.Indexes[i]
+}
