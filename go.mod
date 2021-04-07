@@ -9,6 +9,7 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452
 	github.com/fernandosanchezjr/sha256-simd v0.1.4
+	github.com/fsnotify/fsnotify v1.4.9
 	github.com/go-echarts/go-echarts v1.0.0
 	github.com/howeyc/crc16 v0.0.0-20171223171357-2b2a61e366a6
 	github.com/julienschmidt/httprouter v1.3.0

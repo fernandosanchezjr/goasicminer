@@ -38,18 +38,26 @@ func NewGovernor(cfg *config.Config) *Governor {
 		workQuit: nil,
 		cron:     cron.New(),
 	}
-	//governor.setupTimers()
+	governor.setupTimers()
 	return governor
 }
 
 func (g *Governor) setupTimers() {
-	if _, err := g.cron.AddFunc("00 17 * * *", g.Stop); err != nil {
-		log.Fatal(err)
+	for _, downTime := range g.Config.DownTime {
+		if _, err := g.cron.AddFunc(downTime.Start, g.Stop); err != nil {
+			log.Fatal(err)
+		}
+		if _, err := g.cron.AddFunc(downTime.End, g.Start); err != nil {
+			log.Fatal(err)
+		}
+		log.WithFields(log.Fields{
+			"start": downTime.Start,
+			"end":   downTime.End,
+		}).Info("Downtime registered")
 	}
-	if _, err := g.cron.AddFunc("00 20 * * *", g.Start); err != nil {
-		log.Fatal(err)
+	if len(g.cron.Entries()) > 0 {
+		g.cron.Start()
 	}
-	g.cron.Start()
 }
 
 func (g *Governor) Start() {
@@ -125,4 +133,19 @@ func (g *Governor) workReceiver() {
 			g.DeviceScan(work)
 		}
 	}
+}
+
+func (g *Governor) Restart() {
+	g.Stop()
+	g.Start()
+}
+
+func (g *Governor) Update(cfg *config.Config) {
+	if len(g.cron.Entries()) > 0 {
+		g.cron.Stop()
+	}
+	g.Config = cfg
+	g.cron = cron.New()
+	g.setupTimers()
+	g.Restart()
 }

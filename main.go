@@ -46,6 +46,7 @@ func main() {
 		}
 		defer trace.Stop()
 	}
+	configPath := config.GetConfigPath()
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -65,6 +66,22 @@ func main() {
 	}
 	gov := governor.NewGovernor(cfg)
 	gov.Start()
+
+	watcher, err := utils.NewFileWatcher(configPath, func() {
+		newConfig, err := config.LoadConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+		*cfg = *newConfig
+		gov.Update(cfg)
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	utils.Wait()
+	if err := watcher.Close(); err != nil {
+		log.WithError(err).Fatal("Closing watcher")
+	}
 	gov.Stop()
 }

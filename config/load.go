@@ -32,3 +32,7 @@ func LoadConfig() (*Config, error) {
 	}
 	return c, nil
 }
+
+func GetConfigPath() string {
+	return configPath
+}
