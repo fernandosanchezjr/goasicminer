@@ -17,7 +17,7 @@ const (
 	MinVersionReuse    = 8
 	MaxNTimeReuse      = 16
 	MinNTimeReuse      = 8
-	BufferSize         = 256
+	BufferSize         = 64
 	GeneratedCacheSize = 2048
 	Iterations         = 64
 )
@@ -224,7 +224,6 @@ func (hf *HeaderFields) generatorLoop() {
 			}
 			pending = BufferSize - len(hf.generatedChan)
 			if pending == 0 {
-				time.Sleep(time.Millisecond)
 				continue
 			}
 			for i = 0; i < pending; i++ {

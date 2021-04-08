@@ -24,3 +24,15 @@ func TestNewPureBit(t *testing.T) {
 		}).Infoln("Generated")
 	}
 }
+
+func BenchmarkNewPureBit(b *testing.B) {
+	vs := utils.NewVersionSource(0x20000000, 0x1fffe000)
+	var pb = NewPureBit()
+	pb.UpdateVersion(vs)
+	pb.Close()
+	b.ResetTimer()
+	var generated Generated
+	for i := 0; i < b.N; i++ {
+		pb.Next(&generated)
+	}
+}
