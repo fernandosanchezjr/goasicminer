@@ -297,8 +297,7 @@ func (bm *BM1387Controller) setTiming() error {
 	var hashRate utils.HashRate
 	hashRate, bm.fullscanDuration, bm.maxTaskWait = protocol.Timing(bm.chipCount, bm.frequency, BM1387NumCores,
 		BM1387WaitFactor)
-	var latency = int(bm.fullscanDuration.Round(time.Millisecond) / time.Millisecond)
-	if err := bm.Device().SetLatencyTimer(latency); err != nil {
+	if err := bm.Device().SetLatencyTimer(1); err != nil {
 		return err
 	}
 	log.WithFields(log.Fields{
@@ -307,7 +306,6 @@ func (bm *BM1387Controller) setTiming() error {
 		"hashRate":     hashRate,
 		"fullScanTime": bm.fullscanDuration,
 		"maxTaskWait":  bm.maxTaskWait,
-		"latency":      latency,
 	}).Infoln("Timing set up")
 	return nil
 }
