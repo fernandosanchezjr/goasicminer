@@ -104,7 +104,7 @@ func (g *Governor) DeviceScan(work *stratum.Work) {
 				if err := ct.Reset(); err != nil {
 					log.WithFields(log.Fields{
 						"serial": ct.String(),
-						"error":  err,
+						"error":  err.Error(),
 					}).Warnln("Error resetting controller")
 				}
 			}

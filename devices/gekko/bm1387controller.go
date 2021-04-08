@@ -328,7 +328,7 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 			log.WithFields(log.Fields{
 				"serial": bm.String(),
 				"loop":   loopName,
-				"error":  fmt.Sprint(err),
+				"error":  fmt.Errorf("%#v", err),
 			}).Error("Loop error")
 		}
 		bm.waiter.Done()
@@ -345,7 +345,6 @@ func (bm *BM1387Controller) readLoop() {
 		panic(err)
 	}
 	var midstate, index, read int
-	var missing int
 	var nextResult *base.TaskResult
 	var taskResponse *protocol.TaskResponse
 	var currentTask *protocol.Task
@@ -357,7 +356,7 @@ func (bm *BM1387Controller) readLoop() {
 		verifyTasks[i] = base.NewTaskResult()
 	}
 	var verifyPos int
-	timeoutLoops := int(bm.timeout / bm.fullscanDuration)
+	var lastRead = time.Now()
 	for {
 		select {
 		case <-bm.quit:
@@ -382,17 +381,13 @@ func (bm *BM1387Controller) readLoop() {
 			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
 				log.WithFields(log.Fields{
 					"serial": bm.String(),
-					"error":  err,
+					"error":  err.Error(),
 				}).Error("Error decoding response block")
 				continue
 			}
-			if initializationComplete && rb.Count == 0 {
-				missing += 1
-				if missing > timeoutLoops {
-					log.WithFields(log.Fields{
-						"serial": bm.String(),
-						"error":  err.Error(),
-					}).Error("Read error")
+			if rb.Count == 0 {
+				if initializationComplete && time.Since(lastRead) > bm.timeout {
+					log.WithField("serial", bm.String()).Error("Timed out")
 					mainTicker.Stop()
 					bm.waiter.Done()
 					bm.Exit()
@@ -400,7 +395,7 @@ func (bm *BM1387Controller) readLoop() {
 				}
 				continue
 			}
-			missing = 0
+			lastRead = time.Now()
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {
