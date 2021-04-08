@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"flag"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"github.com/sirupsen/logrus"
 	"io"
@@ -11,6 +12,11 @@ import (
 const LogPath = "logs"
 
 var logFile os.File
+var logToFile bool
+
+func init() {
+	flag.BoolVar(&logToFile, "logToFile", true, "enable logging to file")
+}
 
 func getLogFile() *os.File {
 	logFolder := utils.GetSubFolder(LogPath)
@@ -31,5 +37,7 @@ func SetupLogger() {
 	logrus.SetFormatter(&logrus.TextFormatter{ForceColors: true})
 	logrus.RegisterExitHandler(exitHandler)
 	logrus.SetLevel(logrus.DebugLevel)
-	logrus.SetOutput(io.MultiWriter(getLogFile(), os.Stdout))
+	if logToFile {
+		logrus.SetOutput(io.MultiWriter(getLogFile(), os.Stdout))
+	}
 }
