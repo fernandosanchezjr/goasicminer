@@ -7,6 +7,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/stratum"
 	cron "github.com/robfig/cron/v3"
 	log "github.com/sirupsen/logrus"
+	"github.com/stianeikeland/go-rpio/v4"
 	"sync"
 	"time"
 )
@@ -66,6 +67,7 @@ func (g *Governor) Start() {
 	if g.running {
 		return
 	}
+	g.powerOn()
 	log.Infoln("Starting governor")
 	poolCount := len(g.Config.Pools)
 	g.PoolWork = make(stratum.PoolWorkChan, poolCount)
@@ -89,6 +91,7 @@ func (g *Governor) Stop() {
 	log.Infoln("Stopping governor")
 	close(g.workQuit)
 	g.wg.Wait()
+	g.powerOff()
 	close(g.PoolWork)
 	for _, pool := range g.Pools {
 		pool.Stop()
@@ -148,4 +151,36 @@ func (g *Governor) Update(cfg *config.Config) {
 	g.cron = cron.New()
 	g.setupTimers()
 	g.Restart()
+}
+
+func (g *Governor) powerOn() {
+	if !g.Config.PowerControl.Enabled {
+		return
+	}
+	if err := rpio.Open(); err != nil {
+		log.WithError(err).Fatal("Could not open GPIO")
+	}
+	var pin = rpio.Pin(g.Config.PowerControl.Pin)
+	pin.Output()
+	if g.Config.PowerControl.High {
+		pin.High()
+	} else {
+		pin.Low()
+	}
+}
+
+func (g *Governor) powerOff() {
+	if !g.Config.PowerControl.Enabled {
+		return
+	}
+	var pin = rpio.Pin(g.Config.PowerControl.Pin)
+	if g.Config.PowerControl.High {
+		pin.Low()
+	} else {
+		pin.High()
+	}
+	if err := rpio.Close(); err != nil {
+		log.WithError(err).Fatal("Could not open GPIO")
+	}
+	time.Sleep(10 * time.Second)
 }
