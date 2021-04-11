@@ -45,7 +45,7 @@ func NewPureBit() *PureBit {
 		generatedChan:  make(chan *Generated, BufferSize),
 		knownNonceChan: make(chan utils.Nonce64, BufferSize),
 	}
-	pb.bitsManipulated = pb.manipulatedRI.Next(pb.rng)
+	pb.bitsManipulated = MinBitsManipulated + pb.manipulatedRI.Next(pb.rng)
 	pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
 	pb.overviewRI.Shuffle(pb.rng)
 	pb.manipulatedRI.Shuffle(pb.rng)
