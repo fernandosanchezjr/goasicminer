@@ -10,8 +10,12 @@ import (
 	"time"
 )
 
-const MaxBitsManipulated = 96
-const MinBitsManipulated = 8
+const (
+	MaxBitsManipulated = 96
+	MinBitsManipulated = 8
+	BufferSize         = 64
+	GeneratedCacheSize = 2048
+)
 
 type PureBit struct {
 	rng             *rand.Rand
