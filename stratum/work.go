@@ -27,6 +27,7 @@ type Work struct {
 	CleanJobs          bool
 	Nonce              uint32
 	Pool               *Pool
+	SubmitChan         chan *protocol.Submit
 	TargetDifficulty   utils.Difficulty
 	plainHeader        [80]byte
 	headerBuf          *bytes.Buffer
@@ -61,6 +62,7 @@ func NewWork(
 		Ntime:              notify.NTime,
 		CleanJobs:          notify.CleanJobs,
 		Pool:               pool,
+		SubmitChan:         pool.SubmitChan,
 		TargetDifficulty:   utils.Difficulty(result.Int64()),
 		headerBuf:          bytes.NewBuffer(make([]byte, 0, 80)),
 	}

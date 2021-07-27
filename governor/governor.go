@@ -4,7 +4,10 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/config"
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko"
+	"github.com/fernandosanchezjr/goasicminer/generators"
 	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
+	"github.com/fernandosanchezjr/goasicminer/utils"
 	cron "github.com/robfig/cron/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/stianeikeland/go-rpio/v4"
@@ -13,16 +16,18 @@ import (
 )
 
 type Governor struct {
-	Config   *config.Config
-	Context  *base.Context
-	Catalogs []base.IDriverCatalog
-	Pools    []*stratum.Pool
-	PoolWork stratum.PoolWorkChan
-	workQuit chan struct{}
-	wg       sync.WaitGroup
-	cron     *cron.Cron
-	mtx      sync.Mutex
-	running  bool
+	Config     *config.Config
+	Context    *base.Context
+	Catalogs   []base.IDriverCatalog
+	Pools      []*stratum.Pool
+	PoolWork   stratum.PoolWorkChan
+	Collisions map[utils.Nonce64]*protocol.Submit
+	Aggregator chan *protocol.Submit
+	workQuit   chan struct{}
+	wg         sync.WaitGroup
+	cron       *cron.Cron
+	mtx        sync.Mutex
+	running    bool
 }
 
 func NewGovernor(cfg *config.Config) *Governor {
@@ -32,12 +37,13 @@ func NewGovernor(cfg *config.Config) *Governor {
 		return nil
 	}
 	var governor = &Governor{
-		Context:  nil,
-		Catalogs: []base.IDriverCatalog{gekko.NewGekkoCatalog()},
-		Config:   cfg,
-		PoolWork: nil,
-		workQuit: nil,
-		cron:     cron.New(),
+		Context:    nil,
+		Catalogs:   []base.IDriverCatalog{gekko.NewGekkoCatalog()},
+		Config:     cfg,
+		PoolWork:   nil,
+		Collisions: map[utils.Nonce64]*protocol.Submit{},
+		workQuit:   nil,
+		cron:       cron.New(),
 	}
 	governor.setupTimers()
 	return governor
@@ -70,7 +76,8 @@ func (g *Governor) Start() {
 	g.powerOn()
 	log.Infoln("Starting governor")
 	poolCount := len(g.Config.Pools)
-	g.PoolWork = make(stratum.PoolWorkChan, poolCount)
+	g.PoolWork = make(stratum.PoolWorkChan, poolCount*16)
+	g.Aggregator = make(chan *protocol.Submit, 1024)
 	g.wg.Add(1)
 	g.workQuit = make(chan struct{})
 	go g.workReceiver()
@@ -120,9 +127,14 @@ func (g *Governor) DeviceScan(work *stratum.Work) {
 
 func (g *Governor) workReceiver() {
 	var work *stratum.Work
+	var found bool
+	var submit, lastSubmit *protocol.Submit
+	var submitChan chan *protocol.Submit
+	var nonce utils.Nonce64
 	deviceScanTicker := time.NewTicker(10 * time.Second)
 	g.Context = base.NewContext()
 	g.DeviceScan(nil)
+	var progressChan = g.Context.ProgressChan()
 	for {
 		select {
 		case <-g.workQuit:
@@ -130,7 +142,38 @@ func (g *Governor) workReceiver() {
 			g.Context.Close()
 			g.wg.Done()
 			return
+		case nonce = <-progressChan:
+			if submit, found = g.Collisions[nonce]; found {
+				submitChan <- submit
+				delete(g.Collisions, nonce)
+				log.WithFields(log.Fields{
+					"difficulty":  submit.Difficulty,
+					"extraNonce2": submit.ExtraNonce2,
+				}).Println("Aggregated expired")
+			}
+		case submit = <-g.Aggregator:
+			if submit.Difficulty >= 1000000000 {
+				submitChan <- submit
+				delete(g.Collisions, nonce)
+				log.WithFields(log.Fields{
+					"difficulty":  submit.Difficulty,
+					"extraNonce2": submit.ExtraNonce2,
+				}).Println("Aggregated expired")
+				continue
+			}
+			if lastSubmit, found = g.Collisions[submit.ExtraNonce2]; found {
+				if submit.Difficulty > lastSubmit.Difficulty {
+					g.Collisions[submit.ExtraNonce2] = submit
+				}
+			} else {
+				g.Collisions[submit.ExtraNonce2] = submit
+			}
 		case work = <-g.PoolWork:
+			g.Collisions = map[utils.Nonce64]*protocol.Submit{}
+			if generators.ReuseExtraNonce2 {
+				submitChan = work.SubmitChan
+				work.SubmitChan = g.Aggregator
+			}
 			g.Context.UpdateWork(work)
 		case <-deviceScanTicker.C:
 			g.DeviceScan(work)

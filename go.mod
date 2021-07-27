@@ -4,8 +4,12 @@ go 1.14
 
 replace github.com/ziutek/ftdi => github.com/fernandosanchezjr/ftdi v0.0.2
 
+replace github.com/stevenroose/go-bitcoin-core-rpc => ../go-bitcoin-core-rpc
+
 require (
 	github.com/ReneKroon/ttlcache v1.7.0
+	github.com/btcsuite/btcd v0.22.0-beta // indirect
+	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/epiclabs-io/elastic v0.0.0-20200226000247-178868363452
 	github.com/fernandosanchezjr/sha256-simd v0.1.4
@@ -16,6 +20,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.6.0
+	github.com/stevenroose/go-bitcoin-core-rpc v0.0.0-20181021223752-1f5e57e12ba1 // indirect
 	github.com/stianeikeland/go-rpio/v4 v4.4.1-0.20200705092735-acc952dac3eb
 	github.com/valyala/gorpc v0.0.0-20160519171614-908281bef774
 	github.com/ziutek/ftdi v0.0.2

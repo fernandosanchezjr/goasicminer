@@ -1,6 +1,8 @@
 package utils
 
-import "math/rand"
+import (
+	"math/rand"
+)
 
 type RandomIndex struct {
 	Count        int
@@ -29,7 +31,8 @@ func (rpl *RandomIndex) Next(rng *rand.Rand) int {
 		rpl.CurrentCount = rpl.Count
 		rpl.Pos = rpl.MaxPos
 	}
-	var next = rng.Intn(rpl.CurrentCount)
+
+	var next = RandomIntN(rpl.CurrentCount)
 	var value = rpl.Indexes[next]
 	if next != rpl.Pos {
 		rpl.Indexes[rpl.Pos], rpl.Indexes[next] = rpl.Indexes[next], rpl.Indexes[rpl.Pos]

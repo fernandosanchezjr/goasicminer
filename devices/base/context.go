@@ -13,14 +13,14 @@ type Context struct {
 	controllers    map[string]IController
 	lastVersionId  uint64
 	rng            *rand.Rand
-	generator      *generators.PureBit
+	generator      generators.Generator
 }
 
 func NewContext() *Context {
 	c := &Context{
 		controllers: map[string]IController{},
 		rng:         rand.New(rand.NewSource(utils.RandomInt64())),
-		generator:   generators.NewPureBit(),
+		generator:   generators.NewPureRandom(),
 	}
 	return c
 }
@@ -90,4 +90,12 @@ func (c *Context) UpdateWork(work *stratum.Work) {
 
 func (c *Context) ExtraNonceFound(extraNonce utils.Nonce64) {
 	c.generator.ExtraNonceFound(extraNonce)
+}
+
+func (c *Context) ProgressChan() chan utils.Nonce64 {
+	return c.generator.ProgressChan()
+}
+
+func (c *Context) ResetGenerator() {
+	c.generator.UpdateWork()
 }

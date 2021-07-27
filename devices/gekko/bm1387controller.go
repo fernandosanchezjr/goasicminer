@@ -447,14 +447,14 @@ func (bm *BM1387Controller) writeLoop() {
 		case work = <-workChan:
 			ntime = work.Ntime
 			bm.currentJobId = work.JobId
-			bm.submitChan = work.Pool.SubmitChan
+			bm.submitChan = work.SubmitChan
 			bm.poolVersion = work.Version
 			bm.poolVersionRolling = work.VersionRolling
 			(&diff).SetInt64(int64(work.Difficulty))
 			utils.CalculateDifficulty(&diff, bm.currentDiff)
 			generated = <-generatorChan
 			work.SetExtraNonce2(generated.ExtraNonce2)
-			work.SetNtime((ntime & 0xffffff00) | generated.NTime)
+			work.SetNtime((ntime & 0xfffffe00) | generated.NTime)
 			versionMasks[0] = generated.Version0
 			versionMasks[1] = generated.Version1
 			versionMasks[2] = generated.Version2
@@ -545,23 +545,31 @@ func (bm *BM1387Controller) verifyLoop() {
 			if verifyTask.JobId != bm.currentJobId {
 				continue
 			}
-			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
 			hash := verifyTask.CalculateHash()
+			if !(hash[31] == 0x0 && hash[30] == 0x0 && hash[29] == 0x0 && hash[28] == 0x0) {
+				continue
+			}
+			//if generators.ReuseExtraNonce2 {
+			//	bm.ExtraNonceFound(verifyTask.ExtraNonce2)
+			//}
 			utils.HashToBig(hash, &hashBig)
 			poolMatch = hashBig.Cmp(bm.currentDiff) <= 0
 			if !poolMatch {
 				continue
 			}
+			//if !generators.ReuseExtraNonce2 {
+			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
+			//}
 			if bm.poolVersionRolling {
 				submitVersion = verifyTask.Version & ^bm.poolVersion
 			} else {
 				submitVersion = 0
 			}
-			bm.submitChan <- protocol2.NewSubmit(
-				verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion,
-			)
 			utils.CalculateDifficulty(&hashBig, &resultDiff)
 			diff = utils.Difficulty(resultDiff.Int64())
+			bm.submitChan <- protocol2.NewSubmit(
+				verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion, diff,
+			)
 			log.WithFields(log.Fields{
 				"serial":      bm.String(),
 				"jobId":       verifyTask.JobId,

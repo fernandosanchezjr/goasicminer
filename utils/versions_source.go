@@ -83,7 +83,7 @@ func (vs *VersionSource) RNGRetrieve(rng *rand.Rand, dest []Version) {
 }
 
 func (vs *VersionSource) Shuffle(rng *rand.Rand) {
-	rng.Shuffle(len(vs.RolledVersions), vs.shuffler)
+	vs.rpl.Shuffle(rng)
 }
 
 func (vs *VersionSource) shuffler(i, j int) {

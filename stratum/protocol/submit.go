@@ -7,6 +7,8 @@ import (
 )
 
 type Submit struct {
+	Difficulty  utils.Difficulty `json:"-"`
+	ExtraNonce2 utils.Nonce64    `json:"-"`
 	*Method
 }
 
@@ -16,6 +18,7 @@ func NewSubmit(
 	ntime utils.NTime,
 	nonce utils.Nonce32,
 	version utils.Version,
+	difficulty utils.Difficulty,
 ) *Submit {
 	var extraNonceB [8]byte
 	binary.LittleEndian.PutUint64(extraNonceB[:], uint64(extraNonce2))
@@ -29,9 +32,12 @@ func NewSubmit(
 	if version != 0 {
 		params = append(params, version.String())
 	}
-	return &Submit{&Method{
-		Id:         0,
-		MethodName: "mining.submit",
-		Params:     params,
-	}}
+	return &Submit{
+		difficulty,
+		extraNonce2,
+		&Method{
+			Id:         0,
+			MethodName: "mining.submit",
+			Params:     params,
+		}}
 }

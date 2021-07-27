@@ -3,18 +3,17 @@ package generators
 import (
 	"github.com/fernandosanchezjr/goasicminer/generators/bitdirectory"
 	"github.com/fernandosanchezjr/goasicminer/utils"
-	log "github.com/sirupsen/logrus"
 	"math/rand"
-	"sort"
 	"sync"
 	"time"
 )
 
 const (
-	MaxBitsManipulated = 96
-	MinBitsManipulated = 8
-	BufferSize         = 64
-	GeneratedCacheSize = 2048
+	MaxBitsManipulated        = 72
+	MinBitsManipulated        = 8
+	PureBitBufferSize         = 16
+	PureBitNonceReuse         = 64
+	PureBitGeneratedCacheSize = 8192
 )
 
 type PureBit struct {
@@ -34,21 +33,30 @@ type PureBit struct {
 	generatedChan   chan *Generated
 	knownNonceChan  chan utils.Nonce64
 	waiter          sync.WaitGroup
+	delayRI         *utils.RandomIndex
+	progressChan    chan utils.Nonce64
 }
 
 func NewPureBit() *PureBit {
 	var pb = &PureBit{
 		rng:            rand.New(rand.NewSource(utils.RandomInt64())),
-		overviewRI:     utils.NewRandomIndex(200),
 		manipulatedRI:  utils.NewRandomIndex(MaxBitsManipulated - MinBitsManipulated),
 		knownNonces:    map[utils.Nonce64]bool{},
 		knownGenerated: map[Generated]bool{},
 		quitChan:       make(chan struct{}),
 		versionChan:    make(chan *utils.VersionSource),
 		workChan:       make(chan int),
-		generatedChan:  make(chan *Generated, BufferSize),
-		knownNonceChan: make(chan utils.Nonce64, BufferSize),
+		generatedChan:  make(chan *Generated, PureBitBufferSize),
+		knownNonceChan: make(chan utils.Nonce64, PureBitGeneratedCacheSize),
+		delayRI:        utils.NewRandomIndex(11),
+		progressChan:   make(chan utils.Nonce64, PureBitGeneratedCacheSize),
 	}
+	if !ReuseExtraNonce2 {
+		pb.overviewRI = utils.NewRandomIndex(200)
+	} else {
+		pb.overviewRI = utils.NewRandomIndex(136)
+	}
+	pb.delayRI.RemovePositions(0)
 	pb.bitsManipulated = MinBitsManipulated + pb.manipulatedRI.Next(pb.rng)
 	pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
 	pb.overviewRI.Shuffle(pb.rng)
@@ -58,16 +66,7 @@ func NewPureBit() *PureBit {
 	return pb
 }
 
-func (pb *PureBit) IntN(min, max int) int {
-	if min == max {
-		return min
-	}
-	return min + pb.rng.Intn(max-min)
-}
-
-func (pb *PureBit) UpdateVersion(
-	versionSource *utils.VersionSource,
-) {
+func (pb *PureBit) UpdateVersion(versionSource *utils.VersionSource) {
 	pb.versionChan <- versionSource
 }
 
@@ -95,58 +94,60 @@ func (pb *PureBit) versionExists(versionPos int, tmpVersion utils.Version) bool 
 }
 
 func (pb *PureBit) Next(generated *Generated) {
-	var tmpGenerated Generated
 	var found bool
 	var nextBit, entry, offset, pos int
 	var tmpVersion utils.Version
 	var tmpExtraNonce utils.Nonce64
-	var versions utils.Versions
-	copy(versions[:], pb.versions[:])
-	for i := 0; i < pb.bitsManipulated; i++ {
-		nextBit = pb.overviewRI.Next(pb.rng)
-		entry, offset = bitdirectory.Detail(nextBit)
-		switch {
-		case entry == 0:
-			pb.nTime = pb.nTime ^ (1 << offset)
-		case entry < 5:
-			pos = entry - 1
-			tmpVersion = pb.versions[pos] ^ (1 << offset)
-			if !pb.versionExists(pos, tmpVersion) {
-				versions[pos] = tmpVersion
-			}
-		case entry == 5:
-			tmpExtraNonce = pb.extraNonce ^ (1 << offset)
-			if _, found = pb.knownNonces[tmpExtraNonce]; !found {
-				pb.extraNonce = tmpExtraNonce
+	var tmpGenerated Generated
+	for {
+		for i := 0; i < pb.bitsManipulated; i++ {
+			nextBit = pb.overviewRI.Next(pb.rng)
+			entry, offset = bitdirectory.Detail(nextBit)
+			switch {
+			case entry == 0:
+				pb.nTime = pb.nTime ^ (1 << offset)
+			case entry < 5:
+				pos = entry - 1
+				tmpVersion = pb.versions[pos] ^ (1 << offset)
+				if !pb.versionExists(pos, tmpVersion) {
+					pb.versions[pos] = tmpVersion
+				} else {
+					i -= 1
+				}
+			case entry == 5:
+				tmpExtraNonce = pb.extraNonce ^ (1 << offset)
+				if _, found = pb.knownNonces[tmpExtraNonce]; !found {
+					pb.extraNonce = tmpExtraNonce
+				} else {
+					i -= 1
+				}
 			}
 		}
-	}
-	generated.ExtraNonce2 = pb.extraNonce
-	generated.NTime = pb.nTime
-	tmpGenerated = *generated
-	copy(pb.versions[:], versions[:])
-	sort.Sort(&versions)
-	generated.Version0 = versions[0]
-	generated.Version1 = versions[1]
-	generated.Version2 = versions[2]
-	generated.Version3 = versions[3]
-	if _, found = pb.knownGenerated[tmpGenerated]; !found {
-		pb.knownGenerated[tmpGenerated] = true
-	} else {
-		pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
 		generated.ExtraNonce2 = pb.extraNonce
+		generated.NTime = pb.nTime
+		generated.Version0 = pb.versions[0]
+		generated.Version1 = pb.versions[1]
+		generated.Version2 = pb.versions[2]
+		generated.Version3 = pb.versions[3]
+		tmpGenerated = *generated
+		if _, found = pb.knownGenerated[tmpGenerated]; !found {
+			pb.knownGenerated[tmpGenerated] = true
+			break
+		}
 	}
 }
 
 func (pb *PureBit) generatorLoop() {
-	var resetBitCountTicker = time.NewTicker(3 * time.Second)
+	var resetBitCountTicker = time.NewTicker(1 * time.Second)
+	var resetCounts = 0
+	var nextReset = pb.delayRI.Next(pb.rng)
 	var reseedTicker = time.NewTicker(2 * time.Minute)
 	var versionSource *utils.VersionSource
-	var generatedCache = make([]*Generated, GeneratedCacheSize)
+	var generatedCache = make([]*Generated, PureBitGeneratedCacheSize)
 	var currentPos, pending, i int
 	var knownNonce utils.Nonce64
 	var tmpVersion utils.Version
-	var sent int
+	var reuse int
 	for pos := range generatedCache {
 		generatedCache[pos] = &Generated{}
 	}
@@ -171,25 +172,58 @@ func (pb *PureBit) generatorLoop() {
 				}
 			}
 		case <-pb.workChan:
+			pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+			reuse = 0
 			pb.knownNonces = map[utils.Nonce64]bool{}
 			pb.knownGenerated = map[Generated]bool{}
+			pb.delayRI.Reset()
 			pb.overviewRI.Reset()
 			pb.manipulatedRI.Reset()
-			pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
-			log.WithField("sent", sent).Info("PureBit Generator")
-			sent = 0
+			nextReset = pb.delayRI.Next(pb.rng)
 		case <-reseedTicker.C:
 			pb.Reseed()
 		case <-resetBitCountTicker.C:
-			pb.ResetBitCounts()
+			if versionSource == nil {
+				continue
+			}
+			resetCounts += 1
+			if resetCounts >= nextReset {
+				pb.ResetBitCounts()
+			}
+			if !ReuseExtraNonce2 {
+				pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+			}
+			for entry := range pb.versions {
+				for {
+					tmpVersion = pb.versionMask | (versionSource.Mask & utils.Version(pb.rng.Uint32()))
+					if !pb.versionExists(entry, tmpVersion) {
+						pb.versions[entry] = tmpVersion
+						break
+					}
+				}
+			}
 		case knownNonce = <-pb.knownNonceChan:
-			pb.knownNonces[knownNonce] = true
+			if !ReuseExtraNonce2 {
+				pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+				pb.knownNonces[knownNonce] = true
+			}
 		default:
+			if ReuseExtraNonce2 {
+				if reuse >= PureBitNonceReuse {
+					extraNonce := pb.extraNonce
+					time.AfterFunc(30*time.Millisecond, func() {
+						pb.progressChan <- extraNonce
+					})
+					reuse = 0
+					pb.knownNonces[pb.extraNonce] = true
+					pb.extraNonce = utils.Nonce64(pb.rng.Uint64())
+				}
+			}
 			if versionSource == nil {
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}
-			pending = BufferSize - len(pb.generatedChan)
+			pending = PureBitBufferSize - len(pb.generatedChan)
 			if pending == 0 {
 				continue
 			}
@@ -197,17 +231,21 @@ func (pb *PureBit) generatorLoop() {
 				pb.Next(generatedCache[currentPos])
 				pb.generatedChan <- generatedCache[currentPos]
 				currentPos += 1
-				if currentPos >= GeneratedCacheSize {
+				if currentPos >= PureBitGeneratedCacheSize {
 					currentPos = 0
 				}
 			}
-			sent += pending
+			reuse += pending
 		}
 	}
 }
 
 func (pb *PureBit) ResetBitCounts() {
-	pb.bitsManipulated = MinBitsManipulated + pb.manipulatedRI.Next(pb.rng)
+	if !ReuseExtraNonce2 {
+		pb.bitsManipulated = MinBitsManipulated + pb.manipulatedRI.Next(pb.rng)
+	} else {
+		pb.bitsManipulated = 1
+	}
 }
 
 func (pb *PureBit) Close() {
@@ -217,4 +255,8 @@ func (pb *PureBit) Close() {
 
 func (pb *PureBit) GeneratorChan() chan *Generated {
 	return pb.generatedChan
+}
+
+func (pb *PureBit) ProgressChan() chan utils.Nonce64 {
+	return pb.progressChan
 }
