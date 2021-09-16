@@ -22,7 +22,7 @@ func init() {
 
 // Stuff from https://github.com/btcsuite/btcd
 
-// FastHashToBig converts a chainhash.Hash into a big.Int that can be used to
+// HashToBig converts a chainhash.Hash into a big.Int that can be used to
 // perform math comparisons.
 func HashToBig(hash [32]byte, bigInt *big.Int) {
 	// A Hash is in little-endian, but the big package wants the bytes in

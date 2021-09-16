@@ -2,7 +2,7 @@ package base
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/generators"
-	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/node"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"math/rand"
 	"sync"
@@ -20,7 +20,7 @@ func NewContext() *Context {
 	c := &Context{
 		controllers: map[string]IController{},
 		rng:         rand.New(rand.NewSource(utils.RandomInt64())),
-		generator:   generators.NewPureRandom(),
+		generator:   generators.NewUsedNTimes(),
 	}
 	return c
 }
@@ -75,14 +75,10 @@ func (c *Context) GetControllers(driver IDriver) []IController {
 	return found
 }
 
-func (c *Context) UpdateWork(work *stratum.Work) {
+func (c *Context) UpdateWork(work *node.Work) {
 	c.controllersMtx.Lock()
 	defer c.controllersMtx.Unlock()
-	if c.lastVersionId != work.VersionsSource.Id {
-		c.generator.UpdateVersion(work.VersionsSource)
-		c.lastVersionId = work.VersionsSource.Id
-	}
-	c.generator.UpdateWork()
+	c.generator.UpdateWork(work.Clone())
 	for _, ct := range c.controllers {
 		ct.UpdateWork(work.Clone())
 	}
@@ -94,8 +90,4 @@ func (c *Context) ExtraNonceFound(extraNonce utils.Nonce64) {
 
 func (c *Context) ProgressChan() chan utils.Nonce64 {
 	return c.generator.ProgressChan()
-}
-
-func (c *Context) ResetGenerator() {
-	c.generator.UpdateWork()
 }

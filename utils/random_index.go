@@ -5,29 +5,39 @@ import (
 )
 
 type RandomIndex struct {
-	Count        int
-	MaxPos       int
-	CurrentCount int
-	Pos          int
-	Indexes      []int
+	Count         int
+	MaxPos        int
+	CurrentCount  int
+	Pos           int
+	Indexes       []int
+	IndexLocation map[int]int
+	HaltingMode   bool
+	Inactive      []int
 }
 
 func NewRandomIndex(count int) *RandomIndex {
 	var indexes = make([]int, count)
+	var indexLocations = map[int]int{}
 	for i := 0; i < count; i++ {
 		indexes[i] = i
+		indexLocations[i] = i
 	}
 	return &RandomIndex{
-		Count:        count,
-		MaxPos:       count - 1,
-		CurrentCount: count,
-		Pos:          count - 1,
-		Indexes:      indexes,
+		Count:         count,
+		MaxPos:        count - 1,
+		CurrentCount:  count,
+		Pos:           count - 1,
+		Indexes:       indexes,
+		IndexLocation: indexLocations,
+		Inactive:      []int{},
 	}
 }
 
 func (rpl *RandomIndex) Next(rng *rand.Rand) int {
 	if rpl.CurrentCount == 0 {
+		if rpl.HaltingMode {
+			return -1
+		}
 		rpl.CurrentCount = rpl.Count
 		rpl.Pos = rpl.MaxPos
 	}
@@ -35,7 +45,7 @@ func (rpl *RandomIndex) Next(rng *rand.Rand) int {
 	var next = RandomIntN(rpl.CurrentCount)
 	var value = rpl.Indexes[next]
 	if next != rpl.Pos {
-		rpl.Indexes[rpl.Pos], rpl.Indexes[next] = rpl.Indexes[next], rpl.Indexes[rpl.Pos]
+		rpl.swap(rpl.Pos, next)
 	}
 	rpl.Pos -= 1
 	rpl.CurrentCount -= 1
@@ -69,9 +79,20 @@ func (rpl *RandomIndex) RemovePositions(positions ...int) {
 }
 
 func (rpl *RandomIndex) Shuffle(rng *rand.Rand) {
-	rng.Shuffle(len(rpl.Indexes), rpl.shuffler)
+	rng.Shuffle(len(rpl.Indexes), rpl.swap)
+	rpl.Reset()
 }
 
-func (rpl *RandomIndex) shuffler(i, j int) {
-	rpl.Indexes[i], rpl.Indexes[j] = rpl.Indexes[j], rpl.Indexes[i]
+func (rpl *RandomIndex) swap(i, j int) {
+	var iVal, jVal = rpl.Indexes[j], rpl.Indexes[i]
+	rpl.Indexes[i], rpl.Indexes[j] = iVal, jVal
+	rpl.IndexLocation[iVal] = i
+	rpl.IndexLocation[jVal] = j
+}
+
+func (rpl *RandomIndex) Deactivate(value int) {
+	var index = rpl.IndexLocation[value]
+	if index < rpl.CurrentCount {
+		rpl.swap(rpl.Pos, index)
+	}
 }

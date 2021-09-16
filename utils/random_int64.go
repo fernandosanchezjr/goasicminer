@@ -38,3 +38,12 @@ func RandomIntN(max int) int {
 	var intN = float64(binary.BigEndian.Uint32(data[:])) / float64(math.MaxUint32)
 	return int(intN * float64(max))
 }
+
+func MaskedRandomInt64() int64 {
+	var bits = 1 + RandomIntN(64)
+	var mask uint64
+	for i := 0; i < bits; i++ {
+		mask = (mask << 1) | 0x1
+	}
+	return int64(RandomUint64() & mask)
+}

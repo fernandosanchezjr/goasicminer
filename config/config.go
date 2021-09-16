@@ -7,4 +7,5 @@ type Config struct {
 	R606           []R606       `yaml:"r606,omitempty"`
 	DownTime       []DownTime   `yaml:"downtime,omitempty"`
 	PowerControl   PowerControl `yaml:"power_control,omitempty"`
+	Node           *Node        `yaml:"node,omitempty"`
 }

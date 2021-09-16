@@ -2,7 +2,7 @@ module github.com/fernandosanchezjr/goasicminer
 
 go 1.14
 
-replace github.com/ziutek/ftdi => github.com/fernandosanchezjr/ftdi v0.0.2
+replace github.com/ziutek/ftdi => ../ftdi
 
 replace github.com/stevenroose/go-bitcoin-core-rpc => ../go-bitcoin-core-rpc
 

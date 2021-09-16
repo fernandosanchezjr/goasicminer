@@ -2,8 +2,8 @@ package stratum
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
+	"github.com/btcsuite/btcutil"
 	"github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"math/big"
@@ -33,6 +33,7 @@ type Work struct {
 	headerBuf          *bytes.Buffer
 	VersionsSource     *utils.VersionSource
 	ready              bool
+	block              *btcutil.Block
 }
 
 type PoolWorkChan chan *Work
@@ -70,63 +71,31 @@ func NewWork(
 }
 
 func (pw *Work) String() string {
-	return fmt.Sprint("Work ", pw.JobId, " difficulty ", pw.Difficulty, " from ", pw.Pool)
-}
-
-func (pw *Work) Coinbase() []byte {
-	extraNonce1 := make([]byte, 8)
-	binary.BigEndian.PutUint64(extraNonce1, pw.ExtraNonce1)
-	for i := 0; i < 8; i++ {
-		if extraNonce1[i] == 0 {
-			continue
-		} else {
-			extraNonce1 = extraNonce1[i:]
-			break
-		}
-	}
-	coinbaseLen := len(pw.CoinBase1) + len(extraNonce1) + pw.ExtraNonce2Len + len(pw.CoinBase2)
-	coinbaseBytes := make([]byte, 0, coinbaseLen)
-	coinbaseBuf := bytes.NewBuffer(coinbaseBytes)
-	coinbaseBuf.Write(pw.CoinBase1)
-	coinbaseBuf.Write(extraNonce1)
-	_ = binary.Write(coinbaseBuf, binary.LittleEndian, pw.ExtraNonce2)
-	coinbaseBuf.Write(pw.CoinBase2)
-	return coinbaseBuf.Bytes()
-}
-
-func (pw *Work) MerkleRoot() []byte {
-	var plainText [64]byte
-	merkleHash := utils.DoubleHash(pw.Coinbase())
-	copy(plainText[0:32], merkleHash[:])
-	for _, branch := range pw.MerkleBranches {
-		copy(plainText[32:64], branch)
-		merkleHash = utils.DoubleHash(plainText[:])
-		copy(plainText[0:32], merkleHash[:])
-	}
-	utils.SwapUint32Bytes(merkleHash[:])
-	return merkleHash[:]
+	return fmt.Sprint("Work for block", pw.block.Height())
 }
 
 func (pw *Work) PlainHeader() []byte {
 	if !pw.ready {
-		pw.plainHeader[0] = byte((pw.Version >> 24) & 0xff)
-		pw.plainHeader[1] = byte((pw.Version >> 16) & 0xff)
-		pw.plainHeader[2] = byte((pw.Version >> 8) & 0xff)
-		pw.plainHeader[3] = byte(pw.Version & 0xff)
-		copy(pw.plainHeader[4:36], pw.PrevHash[:])
-		copy(pw.plainHeader[36:68], pw.MerkleRoot())
-		pw.plainHeader[68] = byte((pw.Ntime >> 24) & 0xff)
-		pw.plainHeader[69] = byte((pw.Ntime >> 16) & 0xff)
-		pw.plainHeader[70] = byte((pw.Ntime >> 8) & 0xff)
-		pw.plainHeader[71] = byte(pw.Ntime & 0xff)
-		pw.plainHeader[72] = byte((pw.Nbits >> 24) & 0xff)
-		pw.plainHeader[73] = byte((pw.Nbits >> 16) & 0xff)
-		pw.plainHeader[74] = byte((pw.Nbits >> 8) & 0xff)
-		pw.plainHeader[75] = byte(pw.Nbits & 0xff)
-		pw.plainHeader[76] = byte((pw.Nonce >> 24) & 0xff)
-		pw.plainHeader[77] = byte((pw.Nonce >> 16) & 0xff)
-		pw.plainHeader[78] = byte((pw.Nonce >> 8) & 0xff)
-		pw.plainHeader[79] = byte(pw.Nonce & 0xff)
+		header := pw.block.MsgBlock().Header
+		pw.plainHeader[0] = byte((header.Version >> 24) & 0xff)
+		pw.plainHeader[1] = byte((header.Version >> 16) & 0xff)
+		pw.plainHeader[2] = byte((header.Version >> 8) & 0xff)
+		pw.plainHeader[3] = byte(header.Version & 0xff)
+		copy(pw.plainHeader[4:36], header.PrevBlock[:])
+		copy(pw.plainHeader[36:68], header.MerkleRoot[:])
+		ntime := utils.NTime(header.Timestamp.Unix())
+		pw.plainHeader[68] = byte((ntime >> 24) & 0xff)
+		pw.plainHeader[69] = byte((ntime >> 16) & 0xff)
+		pw.plainHeader[70] = byte((ntime >> 8) & 0xff)
+		pw.plainHeader[71] = byte(ntime & 0xff)
+		pw.plainHeader[72] = byte((header.Bits >> 24) & 0xff)
+		pw.plainHeader[73] = byte((header.Bits >> 16) & 0xff)
+		pw.plainHeader[74] = byte((header.Bits >> 8) & 0xff)
+		pw.plainHeader[75] = byte(header.Bits & 0xff)
+		pw.plainHeader[76] = byte((header.Nonce >> 24) & 0xff)
+		pw.plainHeader[77] = byte((header.Nonce >> 16) & 0xff)
+		pw.plainHeader[78] = byte((header.Nonce >> 8) & 0xff)
+		pw.plainHeader[79] = byte(header.Nonce & 0xff)
 		pw.ready = true
 	}
 	return pw.plainHeader[:]

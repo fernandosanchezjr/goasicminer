@@ -1,16 +1,17 @@
 package base
 
 import (
+	"github.com/fernandosanchezjr/goasicminer/node"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"math/big"
 )
 
 type TaskResult struct {
-	JobId       string
+	Work        *node.Work
+	WorkId      uint64
 	Version     utils.Version
 	VersionPos  int32
 	Midstate    int32
-	ExtraNonce2 utils.Nonce64
 	NTime       utils.NTime
 	Nonce       utils.Nonce32
 	PlainHeader [80]byte

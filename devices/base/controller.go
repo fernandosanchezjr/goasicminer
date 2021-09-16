@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fernandosanchezjr/goasicminer/generators"
-	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/node"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
@@ -19,8 +19,8 @@ type IController interface {
 	Driver() IDriver
 	Equals(other IController) bool
 	Reset() error
-	UpdateWork(work *stratum.Work)
-	WorkChannel() stratum.PoolWorkChan
+	UpdateWork(work *node.Work)
+	WorkChannel() node.WorkChan
 	AllocateWriteBuffer() ([]byte, error)
 	Write(data []byte) (int, error)
 	AllocateReadBuffer() ([]byte, error)
@@ -34,7 +34,7 @@ type Controller struct {
 	device        *ftdi.Device
 	driver        IDriver
 	serialNumber  string
-	workChan      stratum.PoolWorkChan
+	workChan      node.WorkChan
 	context       *Context
 	open          bool
 	generatorChan chan *generators.Generated
@@ -42,7 +42,7 @@ type Controller struct {
 
 func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
 	return &Controller{device: device, context: ctx, driver: driver, serialNumber: serialNumber,
-		workChan: make(stratum.PoolWorkChan, 16), open: true}
+		workChan: make(node.WorkChan, 16), open: true}
 }
 
 func (c *Controller) String() string {
@@ -80,9 +80,6 @@ func (c *Controller) Exit() {
 	if !c.open {
 		return
 	}
-	log.WithFields(log.Fields{
-		"serial": c.String(),
-	}).Infoln("Controller exiting")
 	c.Close()
 	c.context.Unregister(c)
 }
@@ -103,14 +100,14 @@ func (c *Controller) Reset() error {
 	return nil
 }
 
-func (c *Controller) UpdateWork(work *stratum.Work) {
+func (c *Controller) UpdateWork(work *node.Work) {
 	select {
 	case c.workChan <- work:
 	default:
 	}
 }
 
-func (c *Controller) WorkChannel() stratum.PoolWorkChan {
+func (c *Controller) WorkChannel() node.WorkChan {
 	return c.workChan
 }
 

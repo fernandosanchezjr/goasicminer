@@ -5,9 +5,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 	log "github.com/sirupsen/logrus"
 	"path"
+	"time"
 )
 
 func watcherLoop(filePath string, watcher *fsnotify.Watcher, f func()) {
+	var lastEvent = time.Now()
 	for {
 		select {
 		case event, ok := <-watcher.Events:
@@ -19,7 +21,9 @@ func watcherLoop(filePath string, watcher *fsnotify.Watcher, f func()) {
 				"op":   event.Op,
 			}).Info("File watcher")
 			if event.Name == filePath &&
-				((event.Op&fsnotify.Write) == fsnotify.Write || (event.Op&fsnotify.Create) == fsnotify.Create) {
+				(event.Op == fsnotify.Write || event.Op == fsnotify.Create) &&
+				time.Since(lastEvent) >= time.Duration(60*time.Second) {
+				lastEvent = time.Now()
 				f()
 			}
 		case err, ok := <-watcher.Errors:

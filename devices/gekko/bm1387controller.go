@@ -5,7 +5,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/devices/base"
 	"github.com/fernandosanchezjr/goasicminer/devices/gekko/protocol"
 	"github.com/fernandosanchezjr/goasicminer/generators"
-	"github.com/fernandosanchezjr/goasicminer/stratum"
+	"github.com/fernandosanchezjr/goasicminer/node"
 	protocol2 "github.com/fernandosanchezjr/goasicminer/stratum/protocol"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
@@ -29,26 +29,26 @@ const (
 
 type BM1387Controller struct {
 	base.IController
-	frequency          float64
-	chipCount          int
-	tasks              []*protocol.Task
-	quit               chan struct{}
-	waiter             sync.WaitGroup
-	verifyQueue        chan *base.TaskResult
-	timeout            time.Duration
-	fullscanDuration   time.Duration
-	maxTaskWait        time.Duration
-	currentDiff        *big.Int
-	poolVersion        utils.Version
-	poolVersionRolling bool
-	shuttingDown       bool
-	submitChan         chan *protocol2.Submit
-	minFrequency       float64
-	maxFrequency       float64
-	defaultFrequency   float64
-	targetChips        int
-	currentJobId       string
-	initialized        bool
+	frequency        float64
+	chipCount        int
+	tasks            []*protocol.Task
+	quit             chan struct{}
+	waiter           sync.WaitGroup
+	verifyQueue      chan *base.TaskResult
+	timeout          time.Duration
+	fullscanDuration time.Duration
+	maxTaskWait      time.Duration
+	currentDiff      *big.Int
+	targetDiff       *big.Int
+	poolVersion      utils.Version
+	shuttingDown     bool
+	submitChan       chan *protocol2.Submit
+	minFrequency     float64
+	maxFrequency     float64
+	defaultFrequency float64
+	targetChips      int
+	initialized      bool
+	work             *node.Work
 }
 
 func NewBM1387Controller(
@@ -60,7 +60,7 @@ func NewBM1387Controller(
 	timeout time.Duration,
 ) *BM1387Controller {
 	rc := &BM1387Controller{IController: controller, quit: make(chan struct{}), frequency: 0.0,
-		currentDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
+		currentDiff: big.NewInt(0), targetDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
 		defaultFrequency: defaultFrequency, targetChips: targetChips, timeout: timeout,
 	}
 	rc.allocateTasks()
@@ -96,10 +96,6 @@ func (bm *BM1387Controller) Close() {
 
 func (bm *BM1387Controller) Reset() error {
 	defer bm.loopRecover("init")
-	log.WithFields(log.Fields{
-		"serial": bm.String(),
-		"driver": bm.Driver().String(),
-	}).Infoln("Resetting")
 	if err := bm.performReset(); err != nil {
 		go bm.Exit()
 		return err
@@ -107,11 +103,6 @@ func (bm *BM1387Controller) Reset() error {
 	if err := bm.countChips(); err != nil {
 		go bm.Exit()
 		return err
-	} else {
-		log.WithFields(log.Fields{
-			"serial": bm.String(),
-			"chips":  bm.chipCount,
-		}).Infoln("Found chips")
 	}
 	if err := bm.sendChainInactive(); err != nil {
 		return err
@@ -129,9 +120,6 @@ func (bm *BM1387Controller) Reset() error {
 		go bm.Exit()
 		return err
 	}
-	log.WithFields(log.Fields{
-		"serial": bm.String(),
-	}).Infoln("Reset")
 	return nil
 }
 
@@ -355,6 +343,7 @@ func (bm *BM1387Controller) readLoop() {
 	}
 	var verifyPos int
 	var lastRead = time.Now()
+	var markRead bool
 	for {
 		select {
 		case <-bm.quit:
@@ -362,8 +351,15 @@ func (bm *BM1387Controller) readLoop() {
 			bm.waiter.Done()
 			return
 		case <-mainTicker.C:
-			rb.Count = 0
+			markRead = false
+			if initializationComplete && time.Since(lastRead) > bm.timeout {
+				mainTicker.Stop()
+				bm.waiter.Done()
+				bm.Exit()
+				return
+			}
 			if !bm.initialized {
+				time.Sleep(1 * time.Millisecond)
 				continue
 			}
 			if read, err = bm.Read(buf); err != nil {
@@ -383,17 +379,6 @@ func (bm *BM1387Controller) readLoop() {
 				}).Error("Error decoding response block")
 				continue
 			}
-			if rb.Count == 0 {
-				if initializationComplete && time.Since(lastRead) > bm.timeout {
-					log.WithField("serial", bm.String()).Error("Timed out")
-					mainTicker.Stop()
-					bm.waiter.Done()
-					bm.Exit()
-					return
-				}
-				continue
-			}
-			lastRead = time.Now()
 			for i := 0; i < rb.Count; i++ {
 				taskResponse = rb.Responses[i]
 				if taskResponse.BusyResponse() {
@@ -411,13 +396,15 @@ func (bm *BM1387Controller) readLoop() {
 				}
 				nextResult = verifyTasks[verifyPos]
 				currentTask = bm.tasks[index]
-				if currentTask.GetJobId() == bm.currentJobId {
-					currentTask.UpdateResult(nextResult, taskResponse.Nonce, midstate)
-					bm.verifyQueue <- nextResult
-					verifyPos += 1
-					if verifyPos >= BM1387MaxVerifyTasks {
-						verifyPos = 0
-					}
+				currentTask.UpdateResult(nextResult, taskResponse.Nonce, midstate)
+				bm.verifyQueue <- nextResult
+				verifyPos += 1
+				if verifyPos >= BM1387MaxVerifyTasks {
+					verifyPos = 0
+				}
+				if !markRead {
+					markRead = true
+					lastRead = time.Now()
 				}
 			}
 		}
@@ -428,14 +415,12 @@ func (bm *BM1387Controller) writeLoop() {
 	defer bm.loopRecover("write")
 	var generated *generators.Generated
 	var generatorChan = bm.GetGenerator()
-	var task = stratum.NewTask(BM1387MidstateCount, true)
-	var work *stratum.Work
+	var task = node.NewTask(BM1387MidstateCount, true)
+	var work *node.Work
 	var workChan = bm.WorkChannel()
-	var ntime utils.NTime
 	var versionMasks [BM1387MidstateCount]utils.Version
 	var currentTask *protocol.Task
 	var mainTicker = time.NewTicker(bm.fullscanDuration)
-	var diff big.Int
 	var nextPos uint32
 	var written int
 	for {
@@ -445,22 +430,16 @@ func (bm *BM1387Controller) writeLoop() {
 			bm.waiter.Done()
 			return
 		case work = <-workChan:
-			ntime = work.Ntime
-			bm.currentJobId = work.JobId
-			bm.submitChan = work.SubmitChan
-			bm.poolVersion = work.Version
-			bm.poolVersionRolling = work.VersionRolling
-			(&diff).SetInt64(int64(work.Difficulty))
-			utils.CalculateDifficulty(&diff, bm.currentDiff)
+			if work != nil {
+				continue
+			}
 			generated = <-generatorChan
-			work.SetExtraNonce2(generated.ExtraNonce2)
-			work.SetNtime((ntime & 0xfffffe00) | generated.NTime)
 			versionMasks[0] = generated.Version0
 			versionMasks[1] = generated.Version1
 			versionMasks[2] = generated.Version2
 			versionMasks[3] = generated.Version3
 			if bm.initialized {
-				task.Update(work, versionMasks[:])
+				task.Update(generated.Work, versionMasks[:])
 				currentTask = bm.tasks[nextPos]
 				currentTask.Update(task)
 			}
@@ -512,13 +491,11 @@ func (bm *BM1387Controller) writeLoop() {
 			if bm.initialized {
 				currentTask = bm.tasks[nextPos]
 				generated = <-generatorChan
-				work.SetExtraNonce2(generated.ExtraNonce2)
-				work.SetNtime(utils.NTime(int64(ntime) + int64(generated.NTime)))
 				versionMasks[0] = generated.Version0
 				versionMasks[1] = generated.Version1
 				versionMasks[2] = generated.Version2
 				versionMasks[3] = generated.Version3
-				task.Update(work, versionMasks[:])
+				task.Update(generated.Work, versionMasks[:])
 				currentTask.Update(task)
 			}
 		}
@@ -530,8 +507,6 @@ func (bm *BM1387Controller) verifyLoop() {
 	var verifyTask *base.TaskResult
 	var resultDiff big.Int
 	var hashBig big.Int
-	var poolMatch bool
-	var submitVersion utils.Version
 	var diff utils.Difficulty
 	for {
 		select {
@@ -542,43 +517,40 @@ func (bm *BM1387Controller) verifyLoop() {
 			if verifyTask == nil {
 				continue
 			}
-			if verifyTask.JobId != bm.currentJobId {
-				continue
-			}
 			hash := verifyTask.CalculateHash()
 			if !(hash[31] == 0x0 && hash[30] == 0x0 && hash[29] == 0x0 && hash[28] == 0x0) {
 				continue
 			}
-			//if generators.ReuseExtraNonce2 {
-			//	bm.ExtraNonceFound(verifyTask.ExtraNonce2)
-			//}
 			utils.HashToBig(hash, &hashBig)
-			poolMatch = hashBig.Cmp(bm.currentDiff) <= 0
-			if !poolMatch {
+			if hashBig.Cmp(verifyTask.Work.BigDifficulty) > 0 {
 				continue
 			}
-			//if !generators.ReuseExtraNonce2 {
-			bm.ExtraNonceFound(verifyTask.ExtraNonce2)
-			//}
-			if bm.poolVersionRolling {
-				submitVersion = verifyTask.Version & ^bm.poolVersion
-			} else {
-				submitVersion = 0
+			if hashBig.Cmp(verifyTask.Work.BigTargetDifficulty) <= 0 {
+				var work = verifyTask.Work.Clone()
+				work.SetNtime(verifyTask.NTime)
+				work.SetVersion(verifyTask.Version)
+				if submitErr := work.Submit(); submitErr != nil {
+					log.WithError(submitErr).Warn("Node submit error")
+				} else {
+					log.WithFields(log.Fields{
+						"jobId":  work.WorkId,
+						"height": work.Block.Height(),
+					}).Warn("BLOCK MINED")
+				}
 			}
 			utils.CalculateDifficulty(&hashBig, &resultDiff)
 			diff = utils.Difficulty(resultDiff.Int64())
-			bm.submitChan <- protocol2.NewSubmit(
-				verifyTask.JobId, verifyTask.ExtraNonce2, verifyTask.NTime, verifyTask.Nonce, submitVersion, diff,
-			)
-			log.WithFields(log.Fields{
-				"serial":      bm.String(),
-				"jobId":       verifyTask.JobId,
-				"extraNonce2": verifyTask.ExtraNonce2,
-				"nTime":       verifyTask.NTime,
-				"nonce":       verifyTask.Nonce,
-				"version":     verifyTask.Version,
-				"difficulty":  diff,
-			}).Infoln("Result")
+			if diff >= 8192 {
+				log.WithFields(log.Fields{
+					"serial":       bm.String(),
+					"jobId":        verifyTask.WorkId,
+					"nTime":        verifyTask.NTime,
+					"nonce":        verifyTask.Nonce,
+					"version":      verifyTask.Version,
+					"difficulty":   diff,
+					"transactions": verifyTask.Work.Transactions,
+				}).Infoln("Result")
+			}
 		}
 	}
 }

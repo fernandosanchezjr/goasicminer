@@ -32,6 +32,7 @@ func NewVersionSource(version Version, mask Version) *VersionSource {
 }
 
 func (vs *VersionSource) init() {
+	var tmpVersion Version
 	tmpMask := vs.Mask
 	bitPositions := make([]int, vs.bitCount)
 	pos := 0
@@ -41,6 +42,10 @@ func (vs *VersionSource) init() {
 			pos += 1
 		}
 		tmpMask = tmpMask >> 1
+	}
+	usedVersions := map[Version]bool{}
+	for _, version := range GetUsedVersions() {
+		usedVersions[version] = true
 	}
 	vs.RolledVersions = []Version{vs.Version}
 	if vs.bitCount > 0 && vs.minVersionBits > 0 && vs.bitCount >= vs.maxVersionBits {
@@ -52,10 +57,30 @@ func (vs *VersionSource) init() {
 				for k := 0; k < len(combinations[j]); k++ {
 					tmpMask = tmpMask | 1<<bitPositions[combinations[j][k]]
 				}
-				vs.RolledVersions = append(vs.RolledVersions, vs.Version|tmpMask)
+				tmpVersion = vs.Version | tmpMask
+				if _, found := usedVersions[tmpVersion]; found {
+					vs.RolledVersions = append(vs.RolledVersions, tmpVersion)
+				}
 			}
 		}
 	}
+	//mask := vs.Version | vs.Mask
+	//usedVersions := map[Version]bool{}
+	//for _, version := range GetUsedVersions() {
+	//	tmpVersion := version & mask
+	//	tmpFound := false
+	//	usedVersions[tmpVersion] = true
+	//	for _, v := range vs.RolledVersions {
+	//		if v == tmpVersion {
+	//			tmpFound = true
+	//			break
+	//		}
+	//	}
+	//	log.Println(version & mask, tmpFound)
+	//}
+	//for key := range usedVersions {
+	//	vs.RolledVersions = append(vs.RolledVersions, key)
+	//}
 	vs.versionCount = len(vs.RolledVersions)
 	vs.rpl = NewRandomIndex(vs.versionCount)
 }
