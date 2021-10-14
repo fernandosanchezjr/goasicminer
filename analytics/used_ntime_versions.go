@@ -43,9 +43,14 @@ func NewUsedNTime(nTime utils.NTime, rawUsedNTime map[utils.Version]uint64) *Use
 
 func (ut *UsedNTime) FilterVersions(mask utils.Version) {
 	var newVersions = make([]utils.Version, 0)
+	var maskFound bool
 	for _, version := range ut.Versions {
-		if (version & mask) == mask {
-			newVersions = append(newVersions, version)
+		var result = version & mask
+		if result == mask {
+			if result != version || !maskFound {
+				newVersions = append(newVersions, version)
+				maskFound = true
+			}
 		}
 	}
 	ut.Versions = newVersions
