@@ -33,6 +33,9 @@ func (n *Node) generateLoop() {
 		case <-n.generateExit:
 			return
 		case count = <-n.generateChan:
+			if n.blockTemplate == nil {
+				continue
+			}
 			var work = n.GenerateWork(count)
 			if work != nil {
 				n.workChan <- work

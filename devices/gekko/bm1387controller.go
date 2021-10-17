@@ -31,7 +31,6 @@ type BM1387Controller struct {
 	base.IController
 	frequency        float64
 	chipCount        int
-	tasks            []*protocol.Task
 	quit             chan struct{}
 	waiter           sync.WaitGroup
 	verifyQueue      chan *base.TaskResult
@@ -47,8 +46,14 @@ type BM1387Controller struct {
 	maxFrequency     float64
 	defaultFrequency float64
 	targetChips      int
-	initialized      bool
+	warmupWritten    bool
+	warmupRead       bool
 	work             *node.Work
+	lastRead         time.Time
+	readTicker       *time.Ticker
+	writeTicker      *time.Ticker
+	taskResultPool   *base.TaskResultPool
+	pendingTaskPool  *protocol.TaskPool
 }
 
 func NewBM1387Controller(
@@ -62,20 +67,10 @@ func NewBM1387Controller(
 	rc := &BM1387Controller{IController: controller, quit: make(chan struct{}), frequency: 0.0,
 		currentDiff: big.NewInt(0), targetDiff: big.NewInt(0), minFrequency: minFrequency, maxFrequency: maxFrequency,
 		defaultFrequency: defaultFrequency, targetChips: targetChips, timeout: timeout,
+		taskResultPool:  base.NewTaskResultPool(BM1387MaxVerifyTasks),
+		pendingTaskPool: protocol.NewTaskPool(BM1387MaxJobId, BM1387MidstateCount),
 	}
-	rc.allocateTasks()
 	return rc
-}
-
-func (bm *BM1387Controller) allocateTasks() {
-	var task *protocol.Task
-	var j byte
-	bm.tasks = make([]*protocol.Task, BM1387MaxJobId)
-	for j = 0; j < BM1387MaxJobId; j++ {
-		task = protocol.NewTask(j, BM1387MidstateCount)
-		task.SetBusyWork()
-		bm.tasks[j] = task
-	}
 }
 
 func (bm *BM1387Controller) Close() {
@@ -324,91 +319,108 @@ func (bm *BM1387Controller) loopRecover(loopName string) {
 	}
 }
 
+func closeTicker(ticker *time.Ticker) *time.Ticker {
+	if ticker != nil {
+		ticker.Stop()
+	}
+	return nil
+}
+
+func (bm *BM1387Controller) handlerExit() {
+	bm.readTicker = closeTicker(bm.readTicker)
+	bm.writeTicker = closeTicker(bm.writeTicker)
+	bm.waiter.Done()
+	bm.Exit()
+}
+
 func (bm *BM1387Controller) readLoop() {
 	defer bm.loopRecover("read")
 	buf, err := bm.AllocateReadBuffer()
 	if err != nil {
 		panic(err)
 	}
-	var midstate, index, read int
-	var nextResult *base.TaskResult
-	var taskResponse *protocol.TaskResponse
-	var currentTask *protocol.Task
-	var initializationComplete bool
 	rb := protocol.NewResponseBlock()
-	mainTicker := time.NewTicker(bm.fullscanDuration)
-	verifyTasks := make([]*base.TaskResult, BM1387MaxVerifyTasks)
-	for i := 0; i < BM1387MaxVerifyTasks; i++ {
-		verifyTasks[i] = base.NewTaskResult()
-	}
-	var verifyPos int
-	var lastRead = time.Now()
+	bm.readTicker = time.NewTicker(bm.fullscanDuration)
+	var readTime time.Time
 	var markRead bool
 	for {
 		select {
 		case <-bm.quit:
-			mainTicker.Stop()
-			bm.waiter.Done()
+			bm.handlerExit()
 			return
-		case <-mainTicker.C:
+		case readTime = <-bm.readTicker.C:
 			markRead = false
-			if initializationComplete && time.Since(lastRead) > bm.timeout {
-				mainTicker.Stop()
-				bm.waiter.Done()
-				bm.Exit()
-				return
-			}
-			if !bm.initialized {
+			if !bm.warmupWritten {
 				time.Sleep(1 * time.Millisecond)
 				continue
 			}
-			if read, err = bm.Read(buf); err != nil {
-				log.WithFields(log.Fields{
-					"serial": bm.String(),
-					"error":  err.Error(),
-				}).Error("Read error")
-				mainTicker.Stop()
-				bm.waiter.Done()
-				bm.Exit()
+			if read, died := bm.readResponseBlock(buf, rb); died {
+				bm.handlerExit()
 				return
-			}
-			if err := rb.UnmarshalBinary(buf[:read]); err != nil {
-				log.WithFields(log.Fields{
-					"serial": bm.String(),
-					"error":  err.Error(),
-				}).Error("Error decoding response block")
+			} else if !read {
 				continue
 			}
-			for i := 0; i < rb.Count; i++ {
-				taskResponse = rb.Responses[i]
-				if taskResponse.BusyResponse() {
-					continue
-				}
-				initializationComplete = true
-				midstate = taskResponse.JobId % BM1387MidstateCount
-				if midstate != 0 {
-					index = taskResponse.JobId - midstate
-				} else {
-					index = taskResponse.JobId
-				}
-				if index >= BM1387MaxJobId || index < 0 {
-					continue
-				}
-				nextResult = verifyTasks[verifyPos]
-				currentTask = bm.tasks[index]
-				currentTask.UpdateResult(nextResult, taskResponse.Nonce, midstate)
-				bm.verifyQueue <- nextResult
-				verifyPos += 1
-				if verifyPos >= BM1387MaxVerifyTasks {
-					verifyPos = 0
-				}
-				if !markRead {
-					markRead = true
-					lastRead = time.Now()
-				}
+			markRead = bm.dispatchResponseValidation(rb)
+			if markRead {
+				bm.lastRead = readTime
 			}
 		}
 	}
+}
+
+func (bm *BM1387Controller) readResponseBlock(buf []byte, rb *protocol.ResponseBlock) (read bool, died bool) {
+	var readCount int
+	var err error
+	if bm.warmupRead && time.Since(bm.lastRead) > bm.timeout {
+		return false, true
+	}
+	if readCount, err = bm.Read(buf); err != nil {
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"error":  err.Error(),
+		}).Error("Read error")
+		return false, true
+	}
+	if err := rb.UnmarshalBinary(buf[:readCount]); err != nil {
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"error":  err.Error(),
+		}).Error("Error decoding response block")
+		return false, false
+	}
+	return true, false
+}
+
+func (bm *BM1387Controller) dispatchResponseValidation(
+	rb *protocol.ResponseBlock,
+) bool {
+	var read bool
+	var index, midstate int
+	var task *protocol.Task
+	var taskResponse *protocol.TaskResponse
+	for i := 0; i < rb.Count; i++ {
+		taskResponse = rb.Responses[i]
+		if taskResponse.BusyResponse() {
+			read = true
+			continue
+		}
+		bm.warmupRead = true
+		midstate = taskResponse.JobId % BM1387MidstateCount
+		if midstate != 0 {
+			index = taskResponse.JobId - midstate
+		} else {
+			index = taskResponse.JobId
+		}
+		if index >= BM1387MaxJobId || index < 0 {
+			continue
+		}
+		var nextResult = bm.taskResultPool.Next()
+		task = bm.pendingTaskPool.GetTask(index)
+		task.UpdateResult(nextResult, taskResponse.Nonce, midstate)
+		bm.verifyQueue <- nextResult
+		read = true
+	}
+	return read
 }
 
 func (bm *BM1387Controller) writeLoop() {
@@ -416,80 +428,32 @@ func (bm *BM1387Controller) writeLoop() {
 	var generated *generators.Generated
 	var generatorChan = bm.GetGenerator()
 	var task = node.NewTask(BM1387MidstateCount, true)
-	var work *node.Work
 	var workChan = bm.WorkChannel()
 	var versionMasks [BM1387MidstateCount]utils.Version
-	var currentTask *protocol.Task
-	var mainTicker = time.NewTicker(bm.fullscanDuration)
-	var nextPos uint32
-	var written int
+	bm.writeTicker = time.NewTicker(bm.fullscanDuration)
+	var steps = 1
+	var currentTask, last = bm.pendingTaskPool.Next(steps)
 	for {
 		select {
 		case <-bm.quit:
-			mainTicker.Stop()
-			bm.waiter.Done()
+			bm.handlerExit()
 			return
-		case work = <-workChan:
-			if work != nil {
+		case bm.work = <-workChan:
+			continue
+		case <-bm.writeTicker.C:
+			if bm.work == nil {
 				continue
 			}
-			generated = <-generatorChan
-			versionMasks[0] = generated.Version0
-			versionMasks[1] = generated.Version1
-			versionMasks[2] = generated.Version2
-			versionMasks[3] = generated.Version3
-			if bm.initialized {
-				task.Update(generated.Work, versionMasks[:])
-				currentTask = bm.tasks[nextPos]
-				currentTask.Update(task)
-			}
-		case <-mainTicker.C:
-			if work == nil {
-				continue
-			}
-			currentTask = bm.tasks[nextPos]
-			if data, err := currentTask.MarshalBinary(); err != nil {
-				log.WithFields(log.Fields{
-					"serial": bm.String(),
-					"error":  err.Error(),
-				}).Error("Task marshalling error")
-				mainTicker.Stop()
-				bm.waiter.Done()
-				bm.Exit()
+			if !bm.writeTask(currentTask) {
+				bm.handlerExit()
 				return
-			} else {
-				if written, err = bm.Write(data); err != nil {
-					log.WithFields(log.Fields{
-						"serial": bm.String(),
-						"error":  err.Error(),
-					}).Error("Write error")
-					mainTicker.Stop()
-					bm.waiter.Done()
-					bm.Exit()
-					return
-				}
-				if written != len(data) {
-					log.WithFields(log.Fields{
-						"serial": bm.String(),
-						"error":  err.Error(),
-					}).Error("Write incomplete")
-					mainTicker.Stop()
-					bm.waiter.Done()
-					bm.Exit()
-					return
-				}
 			}
-			if !bm.initialized {
-				nextPos += 1
-			} else {
-				nextPos += BM1387MidstateCount
+			currentTask, last = bm.pendingTaskPool.Next(steps)
+			if last {
+				bm.warmupWritten = true
+				steps = BM1387MidstateCount
 			}
-			if nextPos >= BM1387MaxJobId {
-				bm.initialized = true
-				nextPos = 0
-			}
-			if bm.initialized {
-				currentTask = bm.tasks[nextPos]
+			if bm.warmupWritten {
 				generated = <-generatorChan
 				versionMasks[0] = generated.Version0
 				versionMasks[1] = generated.Version1
@@ -502,55 +466,47 @@ func (bm *BM1387Controller) writeLoop() {
 	}
 }
 
+func (bm *BM1387Controller) writeTask(currentTask *protocol.Task) (succeeded bool) {
+	var written int
+	var data []byte
+	var err error
+	if data, err = currentTask.MarshalBinary(); err != nil {
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"error":  err.Error(),
+		}).Error("Task marshalling error")
+		bm.handlerExit()
+		return false
+	}
+	if written, err = bm.Write(data); err != nil {
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"error":  err.Error(),
+		}).Error("Write error")
+		bm.handlerExit()
+		return false
+	}
+	if written != len(data) {
+		log.WithFields(log.Fields{
+			"serial": bm.String(),
+			"error":  err.Error(),
+		}).Error("Write incomplete")
+		bm.handlerExit()
+		return false
+	}
+	return true
+}
+
 func (bm *BM1387Controller) verifyLoop() {
 	defer bm.loopRecover("verify")
-	var verifyTask *base.TaskResult
-	var resultDiff big.Int
-	var hashBig big.Int
-	var diff utils.Difficulty
+	var task *base.TaskResult
 	for {
 		select {
 		case <-bm.quit:
 			bm.waiter.Done()
 			return
-		case verifyTask = <-bm.verifyQueue:
-			if verifyTask == nil {
-				continue
-			}
-			hash := verifyTask.CalculateHash()
-			if !(hash[31] == 0x0 && hash[30] == 0x0 && hash[29] == 0x0 && hash[28] == 0x0) {
-				continue
-			}
-			utils.HashToBig(hash, &hashBig)
-			if hashBig.Cmp(verifyTask.Work.BigDifficulty) > 0 {
-				continue
-			}
-			if hashBig.Cmp(verifyTask.Work.BigTargetDifficulty) <= 0 {
-				var work = verifyTask.Work.Clone()
-				work.SetNtime(verifyTask.NTime)
-				work.SetVersion(verifyTask.Version)
-				if submitErr := work.Submit(); submitErr != nil {
-					log.WithError(submitErr).Warn("Node submit error")
-				} else {
-					log.WithFields(log.Fields{
-						"jobId":  work.WorkId,
-						"height": work.Block.Height(),
-					}).Warn("BLOCK MINED")
-				}
-			}
-			utils.CalculateDifficulty(&hashBig, &resultDiff)
-			diff = utils.Difficulty(resultDiff.Int64())
-			if diff >= 8192 {
-				log.WithFields(log.Fields{
-					"serial":       bm.String(),
-					"jobId":        verifyTask.WorkId,
-					"nTime":        verifyTask.NTime,
-					"nonce":        verifyTask.Nonce,
-					"version":      verifyTask.Version,
-					"difficulty":   diff,
-					"transactions": verifyTask.Work.Transactions,
-				}).Infoln("Result")
-			}
+		case task = <-bm.verifyQueue:
+			task.Verify(bm.String())
 		}
 	}
 }

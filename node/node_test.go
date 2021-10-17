@@ -88,3 +88,19 @@ func TestNode_SubmitBlock(t *testing.T) {
 	}
 	node.Disconnect()
 }
+
+func TestNode_Serialization(t *testing.T) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Node == nil {
+		t.Fatal("No node in cfg file")
+	}
+	node := NewNode(cfg.Node)
+	if err := node.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	work := <-node.GetWorkChan()
+	log.Println(work)
+}

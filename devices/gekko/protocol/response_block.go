@@ -18,7 +18,7 @@ func NewResponseBlock() *ResponseBlock {
 }
 
 func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
-	var tmpResponse, previousResponse TaskResponse
+	var tmpResponse TaskResponse
 	var currentResponse *TaskResponse
 	rb.Count = 0
 	if len(data) == 0 {
@@ -30,10 +30,6 @@ func (rb *ResponseBlock) UnmarshalBinary(data []byte) error {
 				return err
 			}
 			data = data[7:]
-			if previousResponse.JobId == tmpResponse.JobId && previousResponse.Nonce == tmpResponse.Nonce {
-				continue
-			}
-			previousResponse = tmpResponse
 			currentResponse = rb.Responses[rb.Count]
 			currentResponse.JobId = tmpResponse.JobId
 			currentResponse.Nonce = tmpResponse.Nonce

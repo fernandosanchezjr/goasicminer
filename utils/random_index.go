@@ -58,17 +58,13 @@ func (rpl *RandomIndex) Reset() {
 }
 
 func (rpl *RandomIndex) RemovePositions(positions ...int) {
+	var removedPositions = map[int]bool{}
+	for _, value := range positions {
+		removedPositions[value] = true
+	}
 	var newIndexes = make([]int, 0, rpl.Count)
-	var match bool
 	for _, value := range rpl.Indexes {
-		match = false
-		for _, position := range positions {
-			if value == position {
-				match = true
-				break
-			}
-		}
-		if !match {
+		if _, found := removedPositions[value]; !found {
 			newIndexes = append(newIndexes, value)
 		}
 	}

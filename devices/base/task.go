@@ -2,7 +2,6 @@ package base
 
 import (
 	"github.com/fernandosanchezjr/goasicminer/node"
-	"github.com/fernandosanchezjr/goasicminer/stratum"
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	"sync"
 )
@@ -29,7 +28,6 @@ type Task struct {
 	Nonce              utils.Nonce32
 	Versions           []utils.Version
 	PlainHeader        [80]byte
-	Pool               *stratum.Pool
 	mtx                sync.Mutex
 }
 
@@ -56,6 +54,8 @@ func (t *Task) Update(task *node.Task) {
 func (t *Task) UpdateResult(tr *TaskResult, nonce utils.Nonce32, versionIndex int) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
+	tr.Lock()
+	defer tr.Unlock()
 	copy(tr.PlainHeader[:], t.PlainHeader[:])
 	tr.Work = t.Work
 	tr.WorkId = t.WorkId

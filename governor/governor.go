@@ -25,11 +25,6 @@ type Governor struct {
 }
 
 func NewGovernor(cfg *config.Config) *Governor {
-	poolCount := len(cfg.Pools)
-	if poolCount == 0 {
-		log.Fatal("No pools configured!")
-		return nil
-	}
 	var governor = &Governor{
 		Context:  nil,
 		Catalogs: []base.IDriverCatalog{gekko.NewGekkoCatalog()},
@@ -66,7 +61,6 @@ func (g *Governor) Start() {
 	if g.running {
 		return
 	}
-	g.powerOn()
 	log.Infoln("Starting governor")
 	g.wg.Add(1)
 	g.workQuit = make(chan struct{})
@@ -74,6 +68,7 @@ func (g *Governor) Start() {
 		log.WithError(connErr).Error("Error connecting to node")
 	}
 	go g.workReceiver()
+	g.powerOn()
 	g.running = true
 }
 

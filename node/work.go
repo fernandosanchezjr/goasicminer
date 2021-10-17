@@ -64,7 +64,7 @@ func NewWork(
 }
 
 func (pw *Work) String() string {
-	return fmt.Sprint("Work for Block", pw.Block.Height())
+	return fmt.Sprint("Work for Block ", pw.Block.Height())
 }
 
 func (pw *Work) PlainHeader() []byte {

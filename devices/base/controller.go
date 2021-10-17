@@ -8,6 +8,7 @@ import (
 	"github.com/fernandosanchezjr/goasicminer/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/ftdi"
+	"sync"
 )
 
 type IController interface {
@@ -38,6 +39,7 @@ type Controller struct {
 	context       *Context
 	open          bool
 	generatorChan chan *generators.Generated
+	mtx           sync.Mutex
 }
 
 func NewController(ctx *Context, driver IDriver, device *ftdi.Device, serialNumber string) *Controller {
@@ -120,6 +122,8 @@ func (c *Controller) AllocateWriteBuffer() ([]byte, error) {
 }
 
 func (c *Controller) Write(data []byte) (int, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	if !c.open {
 		return 0, errors.New("device closed")
 	}
@@ -135,6 +139,8 @@ func (c *Controller) AllocateReadBuffer() ([]byte, error) {
 }
 
 func (c *Controller) Read(data []byte) (int, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	if !c.open {
 		return 0, errors.New("device closed")
 	}

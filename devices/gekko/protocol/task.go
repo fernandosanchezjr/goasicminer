@@ -23,6 +23,7 @@ func NewTask(jobId byte, versionsCount int) *Task {
 	t.data[1] = 0x00
 	t.data[2] = t.jobId & 0x7f
 	t.data[3] = 0
+	t.setBusyWork()
 	return t
 }
 
@@ -60,7 +61,7 @@ func (t *Task) Update(task *node.Task) {
 	t.busy = false
 }
 
-func (t *Task) SetBusyWork() {
+func (t *Task) setBusyWork() {
 	t.Lock()
 	defer t.Unlock()
 	copy(t.data[4:], busyWork)

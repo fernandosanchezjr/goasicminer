@@ -10,12 +10,14 @@ import (
 )
 
 type UsedNTime struct {
-	rng      *rand.Rand
-	NTime    utils.NTime
-	Versions []utils.Version
-	Index    *utils.RandomIndex
-	Count    int
-	Ended    bool
+	rng         *rand.Rand
+	NTime       utils.NTime
+	Versions    []utils.Version
+	AllVersions []utils.Version
+	Index       *utils.RandomIndex
+	AllIndex    *utils.RandomIndex
+	Count       int
+	Ended       bool
 }
 
 type UsedNTimes struct {
@@ -25,34 +27,42 @@ type UsedNTimes struct {
 	Count  int
 }
 
-func NewUsedNTime(nTime utils.NTime, rawUsedNTime map[utils.Version]uint64) *UsedNTime {
+func NewUsedNTime(nTime utils.NTime, usedVersions map[utils.Version]uint64) *UsedNTime {
 	var ret = &UsedNTime{
-		rng:      rand.New(rand.NewSource(utils.RandomInt64())),
-		NTime:    nTime,
-		Versions: make([]utils.Version, 0),
+		rng:         rand.New(rand.NewSource(utils.RandomInt64())),
+		NTime:       nTime,
+		Versions:    make([]utils.Version, 0),
+		AllVersions: utils.GetUsedVersions(),
 	}
-	for version := range rawUsedNTime {
+	for version := range usedVersions {
 		ret.Versions = append(ret.Versions, version)
 	}
 	ret.Count = len(ret.Versions)
 	ret.Index = utils.NewRandomIndex(ret.Count)
+	ret.AllIndex = utils.NewRandomIndex(len(ret.AllVersions))
+	ret.AllIndex.Shuffle(ret.rng)
 	ret.Index.HaltingMode = true
 	ret.Index.Shuffle(ret.rng)
 	return ret
 }
 
 func (ut *UsedNTime) FilterVersions(mask utils.Version) {
-	var newVersions = make([]utils.Version, 0)
-	var maskFound bool
-	for _, version := range ut.Versions {
-		var result = version & mask
-		if result == mask {
-			if result != version || !maskFound {
-				newVersions = append(newVersions, version)
-				maskFound = true
-			}
+	var positionsToRemove = make([]int, 0)
+	var knownVersions = map[utils.Version]int{}
+	for pos, version := range ut.AllVersions {
+		knownVersions[version] = pos
+		if version&mask != mask {
+			positionsToRemove = append(positionsToRemove, pos)
 		}
 	}
+	var newVersions = make([]utils.Version, 0)
+	for _, version := range ut.Versions {
+		if version&mask == mask {
+			newVersions = append(newVersions, version)
+		}
+		positionsToRemove = append(positionsToRemove, knownVersions[version])
+	}
+	ut.AllIndex.RemovePositions(positionsToRemove...)
 	ut.Versions = newVersions
 	ut.Count = len(ut.Versions)
 	if ut.Count > 0 {
@@ -66,8 +76,8 @@ func LoadUsedNTimes(raw map[utils.NTime]map[utils.Version]uint64) *UsedNTimes {
 	var ret = &UsedNTimes{
 		rng: rand.New(rand.NewSource(utils.RandomInt64())),
 	}
-	for nTime, usedNtimes := range raw {
-		ret.NTimes = append(ret.NTimes, NewUsedNTime(nTime, usedNtimes))
+	for nTime, usedVersions := range raw {
+		ret.NTimes = append(ret.NTimes, NewUsedNTime(nTime, usedVersions))
 	}
 	ret.Count = len(ret.NTimes)
 	ret.Index = utils.NewRandomIndex(ret.Count)
@@ -76,14 +86,14 @@ func LoadUsedNTimes(raw map[utils.NTime]map[utils.Version]uint64) *UsedNTimes {
 }
 
 func (unts *UsedNTimes) FilterVersions(mask utils.Version) {
-	var newVersions = make([]*UsedNTime, 0)
+	var newNtimes = make([]*UsedNTime, 0)
 	for _, unt := range unts.NTimes {
 		unt.FilterVersions(mask)
 		if len(unt.Versions) > 0 {
-			newVersions = append(newVersions, unt)
+			newNtimes = append(newNtimes, unt)
 		}
 	}
-	unts.NTimes = newVersions
+	unts.NTimes = newNtimes
 	unts.Count = len(unts.NTimes)
 	unts.Index = utils.NewRandomIndex(unts.Count)
 	unts.Index.Shuffle(unts.rng)
@@ -120,18 +130,11 @@ func LoadRawUsedNtimes() (*UsedNTimes, error) {
 	return LoadUsedNTimes(usedNTimes), nil
 }
 
-func (ut *UsedNTime) Next(
-	allVersions []utils.Version,
-	versionsRI *utils.RandomIndex,
-	rng *rand.Rand,
-) (versions utils.Versions) {
-	if ut.Ended {
-		ut.Reset()
-	}
+func (ut *UsedNTime) Next() (versions utils.Versions) {
 	for i := 0; i < 4; i++ {
 		var nextIndex = ut.Index.Next(ut.rng)
 		if nextIndex == -1 {
-			versions[i] = allVersions[versionsRI.Next(rng)]
+			versions[i] = ut.AllVersions[ut.AllIndex.Next(ut.rng)]
 			ut.Ended = true
 		} else {
 			versions[i] = ut.Versions[nextIndex]
@@ -143,14 +146,10 @@ func (ut *UsedNTime) Next(
 	return
 }
 
-func (unts *UsedNTimes) Next(
-	allVersions []utils.Version,
-	versionsRI *utils.RandomIndex,
-	rng *rand.Rand,
-) (nTime utils.NTime, versions utils.Versions) {
+func (unts *UsedNTimes) Next() (nTime utils.NTime, versions utils.Versions) {
 	var index = unts.Index.Next(unts.rng)
 	var ut = unts.NTimes[index]
 	nTime = ut.NTime
-	versions = ut.Next(allVersions, versionsRI, rng)
+	versions = ut.Next()
 	return
 }

@@ -11,14 +11,13 @@ import (
 
 const (
 	UsedNTimesPacketSize         = 16
-	UsedNTimesBufferSize         = 256
+	UsedNTimesBufferSize         = 1024
 	UsedNTimesGeneratedCacheSize = 8192
 )
 
 type PreviouslyUsedNTimes struct {
 	rng            *rand.Rand
 	allVersions    []utils.Version
-	versionsRI     *utils.RandomIndex
 	nTime          utils.NTime
 	minnTime       utils.NTime
 	quitChan       chan struct{}
@@ -49,8 +48,6 @@ func NewUsedNTimes() *PreviouslyUsedNTimes {
 		allVersions:    utils.GetUsedVersions(),
 		usedNTimes:     usedNTimes,
 	}
-	pb.versionsRI = utils.NewRandomIndex(len(pb.allVersions))
-	pb.versionsRI.Shuffle(pb.rng)
 	pb.waiter.Add(1)
 	go pb.generatorLoop()
 	return pb
@@ -75,7 +72,7 @@ func (pb *PreviouslyUsedNTimes) Next(generated *Generated, work *node.Work) {
 	var versions utils.Versions
 	var nTime utils.NTime
 
-	nTime, versions = pb.usedNTimes.Next(pb.allVersions, pb.versionsRI, pb.rng)
+	nTime, versions = pb.usedNTimes.Next()
 	generated.NTime = (pb.nTime & 0xffffff00) | nTime
 
 	generated.Work.SetNtime(generated.NTime)
@@ -112,9 +109,8 @@ func (pb *PreviouslyUsedNTimes) generatorLoop() {
 				txCount = work.TotalTransactions
 				txCountRI = utils.NewRandomIndex(txCount)
 				txCountRI.Shuffle(pb.rng)
-				pb.versionsRI.Shuffle(pb.rng)
-				pb.usedNTimes.Reset()
 			}
+			pb.usedNTimes.Reset()
 			sent = 0
 			reset = false
 		default:
